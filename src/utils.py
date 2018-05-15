@@ -1,0 +1,102 @@
+import numpy as np
+
+import keras.utils as kutils
+from keras.datasets import mnist
+import keras.backend as K
+from keras.models import Model
+from sklearn.manifold import Isomap
+
+def process_mnist(normalize=True,verbose=False,y_onehot=True,flat=True,subset=None):
+    # Load data
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    img_rows, img_cols = 28,28
+    if flat:
+        x_train = x_train.reshape(x_train.shape[0], img_rows*img_cols)
+        x_test = x_test.reshape(x_test.shape[0], img_rows*img_cols)
+    else:
+        x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+        x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
+    if normalize:
+        x_train /= 255
+        x_test /= 255
+
+    if verbose:
+        print('x_train shape:', x_train.shape)
+        print(x_train.shape[0], 'train samples')
+        print(x_test.shape[0], 'test samples')
+
+    # convert class vectors to binary class matrices
+    if y_onehot:
+        y_train = kutils.to_categorical(y_train, 10)
+        y_test = kutils.to_categorical(y_test, 10)
+
+    # If subset, return subset of values
+    if subset is not None:
+        x_train = x_train[subset]
+        y_train = y_train[subset]
+
+    return (x_train,y_train), (x_test,y_test)
+
+def get_encoder(model,encoder_slc=None):
+    if encoder_slc is None:
+        layer_sizes = [K.get_variable_shape(lay.output)[1] for lay in model.layers[1:]]
+        encoded_layer_idx = np.argmax(np.array(layer_sizes))
+        encoder_slc = slice(0,encoded_layer_idx-1)
+        
+    encoder_layers = model.layers[encoder_slc]
+    return Model(inputs=encoder_layers[0].input,outputs=encoder_layers[-1].output)
+    
+def get_decoder(model,enc_input,decoder_slc=None):
+    if decoder_slc is None:
+        layer_sizes = [K.get_variable_shape(lay.output)[1] for lay in model.layers[1:]]
+        encoded_layer_idx = np.argmax(np.array(layer_sizes))
+        decoder_slc = slice(encoded_layer_idx-1,len(layer_sizes)+1)
+    
+    decoder_layers = model.layers[decoder_slc]
+    x = decoder_layers[0](enc_input)
+    for decoder_lay in decoder_layers[1:]:
+        x = decoder_lay(x)
+    dec_outputs = x 
+    return Model(enc_input,dec_outputs)
+
+def get_transcoder(enc,dec):
+    return lambda x: dec.predict(enc.predict(x))
+
+def gen_trajectory(x0,x1,delta=0.01,n=100):
+    if isinstance(delta,float):
+        delta = np.arange(0,1+delta,delta)
+    # helper for linearly interpolating between two vectors
+    x = lambda t: ((t*x1) + ((1-t)*x0))
+    x_t = []
+    for t in delta:
+        x_t.append(x(t).tolist())
+
+    return np.array(x_t)
+
+def gen_sorted_isomap(X,C,rescale=False,**kwargs):
+    X_iso = np.squeeze(Isomap(**kwargs).fit_transform(X))
+    
+    x_coord = zip(X,X_iso,C)
+    x_coord_sort = sorted(x_coord,key=lambda x:x[1])
+    x_t_out = []
+    x_iso = []
+    x_class = []
+    for vec,iso,x_C in x_coord_sort:
+        x_t_out.append(vec)
+        x_iso.append(iso)
+        x_class.append(x_C)
+    
+    return np.array(x_t_out),np.array(x_iso),np.array(x_class)
+
+def gen_activation_functors(model,layer_idxs=None):
+    if layer_idxs is None:
+        layer_idxs = np.arange(len(model.layers)-1).tolist()
+    inp = model.input
+    lays = [model.layers[i] for i in layer_idxs]
+    outputs = [lay.output for lay in lays]
+    functors = [K.function([inp]+[K.learning_phase()],[out]) for out in outputs]
+
+    return functors
