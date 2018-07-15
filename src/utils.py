@@ -4,7 +4,13 @@ import keras.utils as kutils
 from keras.datasets import mnist
 import keras.backend as K
 from keras.models import Model
+from keras.callbacks import RemoteMonitor
 from sklearn.manifold import Isomap
+
+import requests
+import datetime
+import hashlib
+import base64
 
 def process_mnist(normalize=True,verbose=False,y_onehot=True,flat=True,subset=None):
     # Load data
@@ -100,3 +106,49 @@ def gen_activation_functors(model,layer_idxs=None):
     functors = [K.function([inp]+[K.learning_phase()],[out]) for out in outputs]
 
     return functors
+
+class ElasticSearchMonitor(RemoteMonitor):
+    def generate_session_id(self,ts):
+        ts = str(ts).encode('utf-8')
+        h = hashlib.md5(ts).digest()
+        sid = base64.urlsafe_b64encode(h)[:6].decode('utf-8')
+        return sid
+    
+    def on_train_begin(self,logs={}):
+        self.losses = []
+        # Log results every 20 batches
+        self.interval = 50
+        bad_sess_id = True
+        while bad_sess_id:
+            timest = round(datetime.datetime.now().timestamp())
+            sess_id = self.generate_session_id(timest)
+            if '-' not in sess_id:
+                bad_sess_id=False
+        
+        self.session = sess_id
+        print('session ID: ',self.session)
+        
+    def on_batch_end(self,batch,logs={}):
+        if (batch-1)%self.interval==0:
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")            
+            logs['@timestamp']=ts
+            logs['session']=self.session
+            logs['user']='elijahc'
+            
+            payload = {k:str(v) for k,v in logs.items()}
+#             print("{}{}/batch/".format(self.root,self.path))
+#             print(payload)
+            r = requests.post("{}{}-batch/doc".format(self.root,self.path),json=payload)
+#             print(r.text)
+
+    def on_epoch_end(self,epoch,logs={}):
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")            
+        logs['@timestamp']=ts
+        logs['session']=self.session
+        
+        payload = {k:str(v) for k,v in logs.items()}
+        
+        r = requests.post("{}{}-epoch/doc".format(self.root,self.path),json=payload)
+        
+        print('posted epoch results!')
+        print(payload)
