@@ -1,97 +1,63 @@
 from datetime import date
 
-from keras.layers import Dense
+from keras.layers import Dense,Input,Lambda
 from keras.models import Model,load_model
+import keras.backend as K
 import os
 
+class VAE_Builder():
+    def __init__(
+        self,
+        enc_layers=[512,64],
+        latent_dim=2,
+        activations='relu',
+        dec_layers=None,):
 
-DEFAULT_DIR = '/home/elijahc/projects/vae'
-def build_dense(inputs,layers,activations=None):
-    if isinstance(activations,list):
-        if len(activations) is not len(layers):
-            raise Exception('activation lists and layers list must be same len')
-        acts = activations
-    elif isinstance(activations,str):
-        acts = [activations]*len(layers)
-    else:
-        raise Exception('activations must be either list or str')
+        self.enc_layers = enc_layers
+        if dec_layers is None:
+            # assume symmetric
+            self.dec_layers = enc_layers.copy()
+            self.dec_layers.reverse()
+        self.latent_dim = 2
+        self.activations='relu'
+        self.layers = []
 
-    x = Dense(layers[0],activation=acts[0])(inputs)
-    for num_units,act in zip(layers[1:],acts[1:]):
-        x = Dense(num_units,activation=act)(x)
-    outputs = x
-    return outputs
 
-class CachedModel(Model):
-    def __init__(self,inputs,outputs,name,verbose,version_date=None,proj_dir=DEFAULT_DIR,**model_params):
-        
-        if version_date is None:
-            version = str(date.today())
-        else:
-            version = str(version_date)
-            
-        self.dir = model_dir = os.path.join(proj_dir,'models',version,name)
-        model_file = os.path.join(model_dir,'model.h5')
-        
-        # Check I'm already supposed to exist
-        if os.path.exists(model_file):
-            if verbose:
-                print('Loading Cached Model: models/'+version+'/'+name)
-            
-            # Load myself
-            self.model = load_model(model_file)
-        else:
-            # I don't exist yet
-            if verbose:
-                print('Creating new model...')
-            
-            if not os.path.exists(model_dir):
-                    os.makedirs(model_dir)
+    def build(self, input_shape):
+        self.input_shape = input_shape
+        self.input = Input(shape=input_shape,name='input')
 
-            self.model = Model(inputs=inputs,outputs=outputs,name=name,**model_params)
+        def chain_dense(inputs,layers,activations):
+            if isinstance(activations,list):
+                if len(activations) is not len(layers):
+                    raise Exception('activation lists and layers list must be same len')
+                acts = activations
+            elif isinstance(activations,str):
+                acts = [activations]*len(layers)
+            else:
+                raise Exception('activations must be either list or str')
+            x = Dense(layers[0],activation=acts[0])(inputs)
+            self.layers.append(x)
+            for num_units,act in zip(layers[1:],acts[1:]):
+                x = Dense(num_units,activation=act)(x)
+                self.layers.append(x)
+            return x
+
+        self.enc_x = chain_dense(self.input,self.enc_layers,self.activations)
+
+        z_mean = Dense(self.latent_dim,name='z_mean')(self.enc_x)
+        z_log_sigma = Dense(self.latent_dim,name='z_log_sigma')(self.enc_x)
+
+        def sampler(args):
+            mean,log_stddev = args
+            std_norm = K.random_normal(shape=(K.shape(mean)[0],self.latent_dim),mean=0,stddev=1)
             
-            # Save myself
-            if verbose:
-                print('Saving to models/'+version+'/'+name)
-            self.model.save(model_file)
-        model_attrs = list(self.model.__dict__.keys())
-        for attr in model_attrs:
-            self.__setattr__(attr,self.model.__getattribute__(attr))    
-    
-    def compile(self,verbose=1,**kwargs):
-        self.model.compile(**kwargs)
-        model_file = os.path.join(self.dir,'model.h5')
-        if verbose:
-            self.model.save(model_file)
-            print('Cached to: \n %s'%model_file)
-            
-    def fit(self,*args,**kwargs):
-        verbose=1
-        force=False
-        if 'force' in list(kwargs.keys()):
-            force = kwargs.pop('force')
-        if 'verbose' in kwargs.keys():
-            verbose = kwargs['verbose']
-        weights_dir = os.path.join(self.dir,'trained_weights')
-        weights_file = os.path.join(weights_dir,'weights.h5')
-        
-        if force:
-            if verbose:
-                print('Forced retraining...')
-            self.model.fit(*args,**kwargs)
-            
-        elif os.path.exists(weights_file):
-            if verbose:
-                print('loading cached weights from '+weights_file)
-            self.model.load_weights(weights_file)
-            
-        else:
-            self.model.fit(*args,**kwargs)
-        
-        if not os.path.exists(weights_dir):
-            os.makedirs(weights_dir)
-            
-        if verbose:
-            print('caching weights to: \n '+weights_file)
-        
-        self.model.save_weights(weights_file)
+            return mean + K.exp(log_stddev) * std_norm
+
+        self.var_z = Lambda(sampler,name='var_z')([z_mean,z_log_sigma])
+        self.layers.append(self.var_z)
+
+        self.dec_x = chain_dense(self.var_z, self.dec_layers,activations=self.activations)
+        self.recon_x = Dense(self.input_shape[0],activation='sigmoid',name='reconstruction')(self.dec_x)
+        self.layers.append(self.recon_x)
+        self.output = self.recon_x

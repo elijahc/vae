@@ -11,6 +11,24 @@ import requests
 import datetime
 import hashlib
 import base64
+import logging
+import os
+
+def get_time():
+    return datetime.now().strftime("%m%d_%H%M%S")
+
+def prepare_dirs_and_logger(config):
+    formatter = logging.Formatter("%(asctime)s:%(levelname)s::%(message)s")
+    logger = logging.getLogger()
+
+    config.model_name = "{}_{}".format(config.dataset, get_time())
+
+    if not hasattr(config, 'model_dir'):
+        config.model_dir = os.path.join(config.log_dir, config.model_name)
+
+    for path in [config.log_dir, config.model_dir]:
+        if not os.path.exists(path):
+            os.makedirs(path)
 
 def process_mnist(normalize=True,verbose=False,y_onehot=True,flat=True,subset=None):
     # Load data
