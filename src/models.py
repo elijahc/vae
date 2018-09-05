@@ -1,6 +1,6 @@
 from datetime import date
 
-from keras.layers import Dense,Input,Lambda
+from keras.layers import Dense,Input,Lambda,Concatenate
 from keras.models import Model,load_model
 import keras.backend as K
 import os
@@ -75,3 +75,27 @@ class VAE_Builder():
         self.recon_x = Dense(self.input_shape[0],activation='sigmoid',name='reconstruction')(self.dec_x)
         self.layers.append(self.recon_x)
         self.output = self.recon_x
+
+class CheungVae():
+    def __init__(self,dataset='mnist'):
+        if dataset=='mnist':
+            mod = self.build_mnist()
+            self.input = mod.inputs
+            self.output = mod.outputs
+            self.model = mod
+
+    def build_mnist(self):
+        inputs = Input(shape=(784,))
+        x = Dense(500,activation='relu')(inputs)
+        x = Dense(500,activation='relu')(x)
+        y_class = Dense(10,activation='softmax')(x)
+        z_mean = Dense(2,activation='linear')(x)
+
+        lat_vec = Concatenate()([y_class,z_mean])
+
+        dec = Dense(500,activation='relu')(lat_vec)
+        dec = Dense(500,activation='relu')(dec)
+        recon = Dense(784,activation='linear')(dec)
+
+        mod = Model(inputs,recon)
+        return mod
