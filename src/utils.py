@@ -21,7 +21,7 @@ def limit_mem():
     K.set_session(K.tf.Session(config=cfg))
 
 def get_time():
-    return datetime.now().strftime("%m%d_%H%M%S")
+    return datetime.datetime.now().strftime("%m%d_%H%M%S")
 
 def prepare_dirs_and_logger(config):
     formatter = logging.Formatter("%(asctime)s:%(levelname)s::%(message)s")

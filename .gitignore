@@ -108,3 +108,7 @@ venv.bak/
 
 # VS Code
 .vscode
+
+logs/
+
+*.tar.gz

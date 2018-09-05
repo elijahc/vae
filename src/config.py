@@ -13,13 +13,24 @@ def add_argument_group(name):
     return arg
 
 # Network
-# net_arg = add_argument_group('Network')
-# net_arg.add_argument('--input_scale_size', type=int, default=64,
-#                      help='input image will be resized with the given value as width and height')
+net_arg = add_argument_group('Network')
+net_arg.add_argument('--enc_layers', nargs='+', type=int, default=[500,500],
+                     help='network encoder arcitecture')
+net_arg.add_argument('--y_dim', type=int, default=10,
+                     help='number of units to represent identity')
+net_arg.add_argument('--z_dim', type=int, default=2,
+                     help='number of units to represent non-identity')
+net_arg.add_argument('--recon', type=int, default=1,
+                     help='weight of the reconstruction loss term')
+net_arg.add_argument('--xcov', type=int, default=10,
+                     help='weight of the xcov loss term')
+net_arg.add_argument('--xent', type=int, default=10,
+                     help='weight of the xentropy loss term')
 
 # Data
 data_arg = add_argument_group('Data')
 data_arg.add_argument('--dataset', type=str, default='mnist')
+# data_arg.add_argument('--shifted'
 data_arg.add_argument('--batch_size', type=int, default=32)
 
 # Training / test parameters

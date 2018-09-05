@@ -36,10 +36,15 @@ class Shifted_Data_Loader():
         print('loading {}'.format(self.dataset))
         if dataset=='mnist':
             from keras.datasets import mnist
-            (self.x_train, self.y_train),(self.x_test, self.y_test) = prepare_keras_dataset(mnist)
+            (x_train, y_train),(x_test, y_test) = prepare_keras_dataset(mnist)
         elif dataset=='fashion_mnist':
             from keras.datasets import fashion_mnist
-            (self.x_train, self.y_train),(self.x_test, self.y_test) = prepare_keras_dataset(fashion_mnist)
+            (x_train, y_train),(x_test, y_test) = prepare_keras_dataset(fashion_mnist)
+
+        self.x_train = x_train
+        self.y_train = y_train
+        self.x_test = x_test
+        self.y_test = y_test
     
         num_train = len(self.y_train)
         num_test =  len(self.y_test)
