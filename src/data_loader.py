@@ -23,15 +23,11 @@ def prepare_keras_dataset(k_data):
     # print(x_test.shape)
     return (x_train,y_train),(x_test,y_test)
 
-def create_shifted_dataset(num_train, num_test):
-    # pre-allocate shifted inputs
-    sx_train = np.empty((num_train,784*4))
-    sx_test = np.empty((num_test,784*4))
-
 class Shifted_Data_Loader():
     def __init__(self,dataset,scale=2):
         self.scale=scale
         self.dataset=dataset
+        self.input_shape = (784*self.scale*self.scale,)
 
         print('loading {}'.format(self.dataset))
         if dataset=='mnist':
@@ -45,12 +41,16 @@ class Shifted_Data_Loader():
         self.y_train = y_train
         self.x_test = x_test
         self.y_test = y_test
+
+        self.y_train_oh = to_categorical(y_train)
+        self.y_test_oh = to_categorical(y_test)
     
         num_train = len(self.y_train)
         num_test =  len(self.y_test)
 
-        self.sx_train = np.empty((num_train, 784*self.scale*self.scale))
-        self.sx_test =  np.empty((num_test, 784*self.scale*self.scale))
+        self.sx_train = np.empty((num_train, self.input_shape[0]))
+        self.sx_test =  np.empty((num_test, self.input_shape[0]))
+
 
         self.delta_train = np.empty((num_train,2))
         self.delta_test = np.empty((num_test,2))
@@ -59,14 +59,14 @@ class Shifted_Data_Loader():
         for i in tqdm(np.arange(num_train)):
             letter = self.x_train[i].reshape(28,28)
             new_im,offsets = self.shift_image(letter)
-            self.sx_train[i] = new_im.reshape(1,4*784)
+            self.sx_train[i] = new_im.reshape(1,self.input_shape[0])
             self.delta_train[i] = offsets
 
         print('making testing data...')
         for i in tqdm(np.arange(num_test)):
             letter = self.x_test[i].reshape(28,28)
             new_im,offsets = self.shift_image(letter)
-            self.sx_test[i] = new_im.reshape(1,4*784)
+            self.sx_test[i] = new_im.reshape(1,self.input_shape[0])
             self.delta_test[i] = offsets
 
     def shift_image(self,X):
