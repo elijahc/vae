@@ -1,4 +1,6 @@
+import numpy as np
 import keras.backend as K
+from keras.losses import mse, categorical_crossentropy
 
 class KLDivergenceLoss():
     def __init__(self,log_sigma,mean,weight=1,name=None):
@@ -17,21 +19,28 @@ class KLDivergenceLoss():
         return self.weight*kl_loss
 
 class ReconstructionLoss():
-    def __init__(self,inputs,outputs,weight=1):
+    def __init__(self,inputs,outputs,weight=1,batch_size=64,agg_type='sse'):
         self.inputs = inputs
         self.outputs = outputs
         self.weight = weight
-        self.units = K.int_shape(inputs)[-1]
+        self.agg_type = agg_type
+#         self.input_shape = K.int_shape(inputs)[1:]
+        self.units = np.prod(K.int_shape(inputs)[1:])
+        self.batch_size = batch_size
         self.__name__ = 'recon'
     
     def pixel_var(self,inp):
         return K.square(K.std(inp,axis=-1))
     
     def recon_loss(self,inp,outp):
-        return K.sum(K.square(outp-inp),axis=-1)
+#         if len(self.input_shape)>1:
+#             inp = K.reshape(inp,(self.batch_size,np.prod(self.input_shape)))
+#             outp = K.reshape(outp,(self.batch_size,np.prod(self.input_shape)))
+            
+        return K.sum(K.sum(K.sum(K.square(outp-inp),axis=-1),axis=-1),axis=-1)
     
     def __call__(self,y_true,y_pred):
-        return self.weight * self.recon_loss(self.inputs,y_pred) / self.units
+        return mse(K.reshape(self.inputs,(-1,56*56)),K.reshape(y_pred,(-1,56*56)))
 
 class XCov():
     def __init__(self,x,y,weight=1):
@@ -58,3 +67,14 @@ class XCov():
         xcov = K.sum(K.square(K.mean(xcov_mat,axis=0)))/2
         
         return self.weight*xcov
+
+class XEnt():
+    def __init__(self,y_class,weight=1):
+        self.weight=weight
+        self.y_class = y_class
+#         self.batch_size = batch_size
+#         self.units = K.int_shape(x)[-1]*K.int_shape(y)[-1]
+        self.__name__ = 'xcov'
+    
+    def __call__(self,y_true,y_pred):
+        return K.sum(self.weight*categorical_crossentropy(y_true,self.y_class))

@@ -23,15 +23,19 @@ def limit_mem():
 def get_time():
     return datetime.datetime.now().strftime("%m%d_%H%M%S")
 
+def get_model_dir(config):
+    if not hasattr(config, 'model_dir'):
+        config.model_dir = os.path.join(config.log_dir, config.model_name)
+    return config.model_dir
+
 def prepare_dirs_and_logger(config):
     formatter = logging.Formatter("%(asctime)s:%(levelname)s::%(message)s")
     logger = logging.getLogger()
 
     config.model_name = "{}_{}".format(config.dataset, get_time())
 
-    if not hasattr(config, 'model_dir'):
-        config.model_dir = os.path.join(config.log_dir, config.model_name)
-
+    model_dir = get_model_dir(config)
+    
     for path in [config.log_dir, config.model_dir]:
         if not os.path.exists(path):
             os.makedirs(path)

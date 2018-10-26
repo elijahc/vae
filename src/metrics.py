@@ -21,3 +21,6 @@ def var_expl(features,cond,bins=11):
             Z_cond_var[j,i] = cond[np.where(Z_bin_idx[:,i]==j)[0]].var()
 
     return Z_cond_var
+
+def eval_corr_var(features,cond,bins=11,):
+    pass
