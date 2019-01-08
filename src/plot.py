@@ -108,3 +108,11 @@ def enc_dec_samples(x_inp,sx_inp,Z,Y,generator,num_examples=5):
         remove_labels(axs[i,3])
         # axs[i,3].set_xticklabels([])
         # axs[i,3].set_yticklabels([])
+        
+def plot_train_history(hist_df,key,ax=None):
+    if ax is not None:
+        ax.plot(hist_df[key])
+    else:
+        plt.plot(hist_df[key])
+        
+    return ax

@@ -1,24 +1,22 @@
 import os
 from .models import TandemVAEBuilder
 from .losses import *
+from .keras_callbacks import *
+
 import keras.backend as K
 from keras.callbacks import Callback,EarlyStopping
 from keras.losses import categorical_crossentropy
 from keras.metrics import categorical_accuracy
 from keras.models import model_from_json,Model
-from keras.layers import Concatenate,Dense,Input
+from keras.layers import Concatenate,Dense,Input,Lambda,Activation
+from keras.activations import softmax,linear
 
-class PrintHistory(Callback):
-    def on_train_begin(self,logs={}):
-       pass
 
-    def on_epoch_end(self,epoch,logs={}):
-        print('Epoch: ',epoch)
-        print(logs)
+tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:]]
 
 def sse(y_true,y_pred):
     return K.sum(K.square(y_pred-y_true),axis=-1)
-    
+
     
 class Trainer(object):
     def __init__(self,config,data_loader,Ebuilder,Gbuilder,load_model=None):
@@ -37,21 +35,29 @@ class Trainer(object):
 
             self.build_model(input_shape=self.data_loader.input_shape)
         
-    def build_model(self,input_shape):
+    def build_encoder(self,input_shape):
         print('building encoder...')
         self.input = Input(shape=input_shape,name='input_image')
         E_output = self.Ebuilder(self.input)
 #         self.y_lat = Dense(self.config.y_dim,activation='relu',name='y_lat')(E_output)
-        self.y_class = Dense(10,activation='softmax',name='class')(E_output)
-        self.z_lat = Dense(self.config.z_dim,name='z_lat')(E_output)
+        self.enc_merge = Dense(self.config.y_dim+self.config.z_dim,name='enc_merge')(E_output)
+        split_enc = Lambda(tf_split_enc,arguments={'y_dim':self.config.y_dim})(self.enc_merge)
+        self.y_class = Activation(softmax,name='class')(split_enc[0])
+        self.z_lat = Activation(linear,name='z_lat')(split_enc[1])
+    
+#         self.y_class = Dense(10,activation='softmax',name='class')(E_output)
+#         self.z_lat = Dense(self.config.z_dim,name='z_lat')(E_output)
         self.real = Dense(2,activation='softmax',name='D')(E_output)
         self.E = Model(
             inputs=self.input,
             outputs=[self.y_class,self.z_lat,self.real],
             name='encoder'
         )
-        latent_vec = Concatenate()([self.y_class,self.z_lat])
         
+    def build_model(self,input_shape):
+        self.build_encoder(input_shape)
+        latent_vec = Concatenate()([self.y_class,self.z_lat])
+
         print('building decoder/generator...')
         G_input = Input(shape=(self.config.y_dim+self.config.z_dim,),name='G_input')
         self.G_output = self.Gbuilder(G_input)
@@ -197,3 +203,114 @@ class Trainer(object):
             self.model = model_from_json(model_json)
 
         self.model.load_weights(os.path.join(self.config.model_dir,'weights.h5'))
+        
+def euclidean_distance(vects):
+        x, y = vects
+        return K.sqrt(K.maximum(K.sum(K.square(x - y), axis=1, keepdims=True), K.epsilon()))
+
+def eucl_dist_output_shape(shapes):
+    shape1, shape2 = shapes
+    return (shape1[0], 1)    
+    
+    
+class ContrastiveTrainer(Trainer):
+    def __init__(self,config,data_loader,Ebuilder,Gbuilder,load_model=None):
+        self.config = config
+        self.optimizer = self.config.optimizer
+        self.batch_size = self.config.batch_size
+        if load_model is not None:
+            self.load_model(mod_name=str(load_model))
+        else:
+            self.data_loader = data_loader
+            self.dataset = config.dataset
+            self.Ebuilder = Ebuilder
+            self.Gbuilder = Gbuilder
+
+#             self.layer_outputs = self.builder.layers
+
+#             self.build_model(input_shape=self.data_loader.input_shape)
+
+    def build_encoder(self,input_shape,outputs=[]):
+        print('building encoder...')
+        self.E_input = Input(shape=input_shape,name='input_image')
+        E_output = self.Ebuilder(self.E_input)
+#         self.y_lat = Dense(self.config.y_dim,activation='relu',name='y_lat')(E_output)
+        self.y_class = Dense(self.config.y_dim,name='class')(E_output)
+        self.z_lat = Dense(self.config.z_dim,name='z_lat')(E_output)
+#         self.real = Dense(2,activation='softmax',name='D')(E_output)
+        
+        self.E = Model(
+            inputs=self.E_input,
+            outputs=[self.y_class,
+                     self.z_lat,
+#                      self.real,
+                    ],
+            name='encoder'
+        )
+
+    def build_decoder(self):
+        print('building decoder/generator...')
+        G_input = Input(shape=(self.config.y_dim+self.config.z_dim,),name='G_input')
+        self.G_output = self.Gbuilder(G_input)
+        self.G = Model(
+            inputs=G_input,
+            outputs=self.G_output,
+            name='G'
+        )
+#         self.C = Model(
+#             inputs=self.input,
+#             outputs=self.y_class,
+#             name='C'
+#         )
+#         self.D = Model(
+#             inputs=self.input,
+#             outputs=self.real,
+#             name='D'
+#         )
+
+    def build_model(self,input_shape):
+        self.build_encoder(input_shape)
+        self.build_decoder()
+        
+        input_a = Input(shape=input_shape,name='A')
+        input_b = Input(shape=input_shape,name='B')
+        self.input = [input_a,input_b]
+        
+        self.A_enc = self.E(input_a)
+        self.B_enc = self.E(input_b)
+        
+        self.Dw = Lambda(euclidean_distance,output_shape=eucl_dist_output_shape,name='euclidean_distance')([self.A_enc[0],self.B_enc[0]]) 
+        
+        A_lat = Concatenate()(self.A_enc)
+        B_lat = Concatenate()(self.B_enc)
+        
+        self.model = Model(
+            inputs=self.input,
+            outputs=[self.G(A_lat),self.G(B_lat),self.Dw],
+        )
+        
+    def compile_model(self):
+        self.losses = {
+            'euclidean_distance': contrastive_loss,
+#             'D': 'binary_crossentropy',
+            'G': sse
+        }
+        
+        lossWeights = {
+            "euclidean_distance": self.config.xent,
+#             "D": 0.0,
+            'G': self.config.recon
+        }
+        metrics = {
+#             'class': 'accuracy',
+            'G': mse,
+            
+        }
+        self.model.add_loss(self.config.xcov*XCov(self.A_enc[0],self.A_enc[1])(self.A_enc[0],self.A_enc[1])/self.config.batch_size)     
+
+        self.model.compile(
+            optimizer=self.config.optimizer,
+            loss=self.losses,
+            loss_weights=lossWeights,
+#             metrics=metrics,
+        )

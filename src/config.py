@@ -1,5 +1,6 @@
 #-*- coding: utf-8 -*-
 import argparse
+import json
 
 def str2bool(v):
     return v.lower() in ('true', '1')
@@ -51,3 +52,13 @@ def get_config():
     # Set or fix any inferences from params here
 
     return config, unparsed
+
+def load_config(model_dir):
+    fp = os.path.join(model_dir,'params.json')
+    print('loading...',fp)
+    with open(fp, 'r') as f:
+        json_config = json.load(f)
+        config = argparse.Namespace()
+        for k in json_config.keys():
+            setattr(config, k, json_config[k])
+        return config

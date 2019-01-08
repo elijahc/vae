@@ -34,11 +34,12 @@ def prepare_keras_dataset(x_train,y_train,x_test,y_test):
     return (x_train,y_train),(x_test,y_test)
 
 class Shifted_Data_Loader():
-    def __init__(self,dataset,scale=2,rotation=0.75,translation=0.75,flatten=True):
+    def __init__(self,dataset,scale=2,rotation=0.75,translation=0.75,flatten=True,train_downsample=None):
         self.scale=scale
         self.dataset=dataset
         self.rotation = rotation
         self.translation = translation
+        self.train_downsample=train_downsample
         
         if self.rotation is not None:
             self.rotation=float(self.rotation)
@@ -69,7 +70,9 @@ class Shifted_Data_Loader():
         elif dataset=='fashion_mnist':
             from keras.datasets import fashion_mnist
             (x_train, y_train),(x_test, y_test) = fashion_mnist.load_data()
-
+        
+        if self.train_downsample is not None:
+            pass
         self.y_train = y_train
         self.y_test = y_test
         self.y_train_oh = to_categorical(y_train)

@@ -22,5 +22,10 @@ def var_expl(features,cond,bins=11):
 
     return Z_cond_var
 
+def norm_var_expl(features,cond,bins=11):
+    fve = var_expl(features,cond,bins)
+
+    return np.nan_to_num((cond.var()-fve)/np.nan_to_num(cond.var()))
+
 def eval_corr_var(features,cond,bins=11,):
     pass
