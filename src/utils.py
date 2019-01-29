@@ -6,6 +6,9 @@ import keras.backend as K
 from keras.models import Model
 from keras.callbacks import RemoteMonitor
 from sklearn.manifold import Isomap
+from pathlib import Path
+import requests
+import json
 
 import requests
 import datetime
@@ -13,7 +16,7 @@ import hashlib
 import base64
 import logging
 import os
-
+    
 def limit_mem():
     K.get_session().close()
     cfg = K.tf.ConfigProto()
@@ -23,22 +26,78 @@ def limit_mem():
 def get_time():
     return datetime.datetime.now().strftime("%m%d_%H%M%S")
 
+def get_date():
+    return datetime.datetime.now().strftime("%Y-%m-%d")
+
+def get_proj_root(config):
+    if not hasattr(config, 'proj_root'):
+        raise Exception('config.proj_root is not defined')
+    
+    return config.proj_root
+
 def get_model_dir(config):
     if not hasattr(config, 'model_dir'):
-        config.model_dir = os.path.join(config.log_dir, config.model_name)
+        config.model_dir = os.path.join(config.log_dir, config.model_name, 'models')
     return config.model_dir
 
+def get_fig_dir(config):
+    if not hasattr(config, 'fig_dir'):
+        config.fig_dir = os.path.join(config.log_dir, config.model_name, 'figures')
+    
+    return config.fig_dir
+        
+def get_data_dir(config):
+    if not hasattr(config, 'data_dir'):
+        config.data_dir = os.path.join(config.log_dir, config.model_name, 'data')
+    return config.data_dir
+
+def get_log_dir(config):
+    if not hasattr(config,'log_dir'):
+        proj_root = get_proj_root(config)
+        log_dir = os.path.join(proj_root,'logs')
+        setattr(config,'log_dir',log_dir)
+    
+    return config.log_dir
+
+def check_and_make_dirs(dir_list):
+    for path in dir_list:
+        if not os.path.exists(path):
+            print(path,' does not exist...')
+            print('creating...')
+            os.makedirs(path)
+    
 def prepare_dirs_and_logger(config):
     formatter = logging.Formatter("%(asctime)s:%(levelname)s::%(message)s")
     logger = logging.getLogger()
 
-    config.model_name = "{}_{}".format(config.dataset, get_time())
+    config.model_name = "{}_{}".format(get_time(), config.dataset)
 
+    log_dir = get_log_dir(config)
+    
+    config.run_dir = os.path.join(config.log_dir,config.model_name)
     model_dir = get_model_dir(config)
     
-    for path in [config.log_dir, config.model_dir]:
-        if not os.path.exists(path):
-            os.makedirs(path)
+    check_and_make_dirs([log_dir, model_dir, config.run_dir])
+    
+    with open(os.path.join(config.run_dir,'config.json'), 'w') as fp:
+        json.dump(vars(config), fp)
+
+def export(config,what='models'):
+    proj_root = get_proj_root(config)
+    run_dir = config.run_dir
+    model_name = config.model_name
+        
+        
+    if what in ['figures','models','data']:   
+        export_fp = os.path.join(proj_root,what,get_date())
+    else:
+        raise Exception('Cannot export {}'.format(str(what)))
+    
+    check_and_make_dirs([export_fp])
+    src = os.path.join(run_dir,what)
+    dest = os.path.join(export_fp,model_name)
+    print('symlinking {} -> {}'.format(os.path.join('logs',config.model_name,what),dest))
+    os.symlink(src,dest,target_is_directory=True)
 
 def process_mnist(normalize=True,verbose=False,y_onehot=True,flat=True,subset=None):
     # Load data

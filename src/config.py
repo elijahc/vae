@@ -1,6 +1,7 @@
 #-*- coding: utf-8 -*-
 import argparse
 import json
+import os
 
 def str2bool(v):
     return v.lower() in ('true', '1')
@@ -43,8 +44,9 @@ train_arg.add_argument('--epochs', type=int, default=5)
 misc_arg = add_argument_group('Misc')
 misc_arg.add_argument('--log_level', type=str, default='INFO',
                     choices=['INFO','DEBUG','WARN'])
+# misc_arg.add_argument('--proj_', type=str, default=os.get_cwd())
 misc_arg.add_argument('--log_dir', type=str, default='logs')
-misc_arg.add_argument('--data_dir', type=str, default='data')
+# misc_arg.add_argument('--data_dir', type=str, default='data')
 
 def get_config():
     config, unparsed = parser.parse_known_args()
