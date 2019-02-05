@@ -64,3 +64,8 @@ def load_config(model_dir):
         for k in json_config.keys():
             setattr(config, k, json_config[k])
         return config
+    
+def save_config(config, dir_path):
+    
+    with open(os.path.join(dir_path,'config.json'), 'w') as fp:
+        json.dump(vars(config), fp)

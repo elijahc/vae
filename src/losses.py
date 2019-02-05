@@ -2,6 +2,12 @@ import numpy as np
 import keras.backend as K
 from keras.losses import mse, categorical_crossentropy
 
+def sse(y_true,y_pred):
+    return K.sum(K.square(y_pred-y_true),axis=-1)
+
+def mse(y_true,y_pred):
+            return K.mean(K.sum(K.square(y_pred-y_true),axis=-1),axis=0)
+
 class KLDivergenceLoss():
     def __init__(self,log_sigma,mean,weight=1,name=None):
         self.log_sigma = log_sigma

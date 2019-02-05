@@ -12,7 +12,8 @@ from keras.layers import Concatenate,Dense,Input,Lambda,Activation
 from keras.activations import softmax,linear
 
 
-tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:]]
+# tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:]]
+tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:-1],K.expand_dims(merge[:,-1])]
 
 def sse(y_true,y_pred):
     return K.sum(K.square(y_pred-y_true),axis=-1)
@@ -40,17 +41,18 @@ class Trainer(object):
         self.input = Input(shape=input_shape,name='input_image')
         E_output = self.Ebuilder(self.input)
 #         self.y_lat = Dense(self.config.y_dim,activation='relu',name='y_lat')(E_output)
-        self.enc_merge = Dense(self.config.y_dim+self.config.z_dim,name='enc_merge')(E_output)
+        self.enc_merge = Dense(self.config.y_dim+self.config.z_dim+1,name='enc_merge')(E_output)
         split_enc = Lambda(tf_split_enc,arguments={'y_dim':self.config.y_dim})(self.enc_merge)
         self.y_class = Activation(softmax,name='class')(split_enc[0])
         self.z_lat = Activation(linear,name='z_lat')(split_enc[1])
+        self.D_real = Activation(linear,name='D_real')(split_enc[2])
     
 #         self.y_class = Dense(10,activation='softmax',name='class')(E_output)
 #         self.z_lat = Dense(self.config.z_dim,name='z_lat')(E_output)
-        self.real = Dense(2,activation='softmax',name='D')(E_output)
+#         self.real = Dense(2,activation='softmax',name='D')(E_output)
         self.E = Model(
             inputs=self.input,
-            outputs=[self.y_class,self.z_lat,self.real],
+            outputs=[self.y_class,self.z_lat,self.D_real],
             name='encoder'
         )
         
@@ -61,6 +63,7 @@ class Trainer(object):
         print('building decoder/generator...')
         G_input = Input(shape=(self.config.y_dim+self.config.z_dim,),name='G_input')
         self.G_output = self.Gbuilder(G_input)
+        self.D_fake = Activation(linear,name='D_fake')(self.E(self.G_output)[2])
         self.G = Model(
             inputs=G_input,
             outputs=self.G_output,
@@ -71,15 +74,15 @@ class Trainer(object):
             outputs=self.y_class,
             name='C'
         )
-        self.D = Model(
-            inputs=self.input,
-            outputs=self.real,
-            name='D'
-        )
+#         self.D = Model(
+#             inputs=self.input,
+#             outputs=self.D_real,
+#             name='D'
+#         )
         
         self.model = Model(
             inputs=self.input,
-            outputs=[self.G(latent_vec),self.y_class,self.real],
+            outputs=[self.G(latent_vec),self.y_class],
         )  
         
     def compile_model(self):
@@ -89,12 +92,12 @@ class Trainer(object):
         
         self.losses = {
             'class': 'categorical_crossentropy',
-            'D': 'binary_crossentropy',
+            # 'D_real': 'binary_crossentropy',
             'G': sse
         }
         lossWeights = {
             "class": self.config.xent,
-            "D": 0.0,
+            # "D_real": 0.0,
             'G': self.config.recon
         }
         metrics = {
@@ -136,7 +139,7 @@ class Trainer(object):
         return total_loss
 
     def go(self,x,y,**kwargs):
-        print_history = PrintHistory()
+        print_history = PrintHistory(['G_loss','val_G_loss','val_class_acc'])
         callbacks=[
             print_history
         ]
@@ -237,6 +240,7 @@ class ContrastiveTrainer(Trainer):
 #         self.y_lat = Dense(self.config.y_dim,activation='relu',name='y_lat')(E_output)
         self.y_class = Dense(self.config.y_dim,name='class')(E_output)
         self.z_lat = Dense(self.config.z_dim,name='z_lat')(E_output)
+        
 #         self.real = Dense(2,activation='softmax',name='D')(E_output)
         
         self.E = Model(

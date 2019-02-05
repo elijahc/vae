@@ -5,7 +5,7 @@ from keras.layers import Dense,Input,Lambda,Concatenate,Flatten,Reshape
 from keras.layers import Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add
 from keras.models import Model,load_model
 import keras.backend as K
-from .layers import FiLM
+# from ..layers import FiLM
 # from tabulate import tabulate
 import os
 
