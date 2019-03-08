@@ -2,7 +2,7 @@ from datetime import date
 import numpy as np
 import keras
 from keras.layers import Dense,Input,Lambda,Concatenate,Flatten,Reshape
-from keras.layers import Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add
+from keras.layers import Conv2D,Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add
 from keras.models import Model,load_model
 import keras.backend as K
 # from ..layers import FiLM
@@ -48,16 +48,29 @@ class ResBlock():
         self.cond_norm=cond_norm
 
     
-    def __call__(self,x,conditioner=None):
-        x = BatchNormalization(name=self.name_layer('BN_1'))(x)
-        x = Activation(self.activation,name=self.name_layer('ReLU_1'))(x)
-
-        F = Conv2DTranspose(self.units,
+    def _bn_relu(self,layer_num=1):
+        def f(x):
+            x = BatchNormalization(name=self.name_layer('BN_{}'.format(layer_num)))(x)
+            x = Activation(self.activation,name=self.name_layer('ReLU_{}'.format(layer_num)))(x)
+            return x
+        return f
+    
+    def _bn_relu_conv(self,layer_num=1):
+        def f(x):
+            x = self._bn_relu(layer_num)
+                
+            return x
+        return f
+    
+    def __call__(self,input,conditioner=None):
+        
+        
+        x = self._bn_relu(layer_num=1)(input)
+        x = Conv2DTranspose(self.units,
                             name=self.name_layer('deconv_1'),
                             kernel_size=(1,1),
                             data_format='channels_last',padding='same')(x)
-        x = BatchNormalization(name=self.name_layer('BN_2'))(F)
-        x = Activation(self.activation,name=self.name_layer('ReLU_2'))(x)
+        x = self._bn_relu(layer_num=2)(x)
         x = Conv2DTranspose(self.units,
                             name=self.name_layer('deconv_2'),
                             kernel_size=(3,3),
@@ -76,6 +89,31 @@ class ResBlock():
             return prefix+'_'+layer_name
         else:
             return None
+    
+class EncResBlock(ResBlock):
+
+    def _bn_relu_conv(self,layer_num,strides):
+        def f(x):
+            x = self._bn_relu(layer_num=layer_num)(x)
+            x = Conv2D(self.units,
+            name=self.name_layer('conv_{}'.format(layer_num)),
+            kernel_size=self.kernel_size,strides=strides,
+            data_format='channels_last',padding='same')(x)
+            
+            return x
+        return f
+    
+    def __call__(self,input):
+        
+        x = self._bn_relu_conv(layer_num=1,strides=(2,2))(input)
+        x = self._bn_relu_conv(layer_num=2,strides=(1,1))(x)
+        x = self._bn_relu_conv(layer_num=3,strides=(1,1))(x)
+        out = self._bn_relu_conv(layer_num=4,strides=(1,1))(x)
+#         out = Add(name=self.name_layer('Add'))([F,x])
+#         x = UpSampling2D()(x)
+
+        return out
+        
     
 class TandemVAEBuilder():
     def __init__(
@@ -128,7 +166,64 @@ class TandemVAEBuilder():
 
         return Model(self.input,self.output)
 
+class EResNet():
+    def __init__(self,
+                 kernel_size=(3,3),
+                 activations='relu',
+                 output_size=56**2,
+                 blocks=[1,2],
+                 ch=16,
+                 CN=False,
+                 y_dim=10,
+                 z_dim=2,
+                ):
+        self.kernel_size=kernel_size
+        self.activations=activations
+        self.output_size=output_size
+        self.blocks = dec_blocks
+        self.ch = ch
+        self.CN = CN
+        self.y_dim=y_dim
+        self.z_dim=z_dim
+        
+    def build(self, input_shape):
+        
+        dim = int(np.sqrt(self.output_size)/(2**len(self.enc_blocks)))
+        feat_map = (dim,dim,self.dec_blocks[0]*self.ch)
+
+        x = Dense(np.prod(feat_map),activation=self.activations)(latent)
+        x = Reshape(feat_map)(x)
+        x = UpSampling2D()(x)
+
+        for i,num_units in enumerate(self.dec_blocks[1:]):
+            
+            x = ResBlock(num_units*self.ch,
+                         self.kernel_size,
+                         activation=self.activations,
+                         block_id=i+1,
+                        )(x) 
+            
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
+        self.recon = Conv2DTranspose(1,
+                                self.kernel_size,
+                                activation='tanh',
+                                name='G_image',
+                                data_format='channels_last',padding='same')(x)
+        if self.flatten_out:
+            x = Flatten(name='G_image_flat')(self.recon)
+        else:
+            x = self.recon
+        
+        return x
     
+    def __call__(self,x):
+        self.input = x
+        self.output = self.build(self.input)
+        
+        return self.output
+        
+
 class EDenseNet():
     def __init__(self,
                  enc_layers=[500,500],
