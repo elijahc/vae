@@ -4,6 +4,7 @@ import keras
 from keras.layers import Dense,Input,Lambda,Concatenate,Flatten,Reshape
 from keras.layers import Conv2D,Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add
 from keras.models import Model,load_model
+from keras.regularizers import l2
 import keras.backend as K
 # from ..layers import FiLM
 # from tabulate import tabulate
@@ -47,6 +48,33 @@ class ResBlock():
         self.block_id = block_id
         self.cond_norm=cond_norm
 
+    def _shortcut(self,input, residual, layer_num=1):
+        """Adds a shortcut between input and residual block and merges them with "sum"
+        """
+        # Expand channels of shortcut to match residual.
+        # Stride appropriately to match residual (width, height)
+        # Should be int if network architecture is correctly configured.
+        ROW_AXIS = 1
+        COL_AXIS = 2
+        CHANNEL_AXIS = 3
+
+        input_shape = K.int_shape(input)
+        residual_shape = K.int_shape(residual)
+        stride_width = int(round(input_shape[ROW_AXIS] / residual_shape[ROW_AXIS]))
+        stride_height = int(round(input_shape[COL_AXIS] / residual_shape[COL_AXIS]))
+        equal_channels = input_shape[CHANNEL_AXIS] == residual_shape[CHANNEL_AXIS]
+
+        shortcut = input
+        # 1 X 1 conv if shape is different. Else identity.
+        if stride_width > 1 or stride_height > 1 or not equal_channels:
+            shortcut = Conv2D(filters=residual_shape[CHANNEL_AXIS],
+                            kernel_size=(1, 1),
+                            strides=(stride_width, stride_height),
+                            padding="valid",
+                            kernel_initializer="he_normal",
+                            kernel_regularizer=l2(0.0001))(input)
+
+        return Add(name=self.name_layer('Add_{}'.format(layer_num)))([shortcut, residual])
     
     def _bn_relu(self,layer_num=1):
         def f(x):
@@ -103,12 +131,14 @@ class EncResBlock(ResBlock):
             return x
         return f
     
-    def __call__(self,input):
+    def __call__(self,x_in):
         
-        x = self._bn_relu_conv(layer_num=1,strides=(2,2))(input)
+        x = self._bn_relu_conv(layer_num=1,strides=(2,2))(x_in)
         x = self._bn_relu_conv(layer_num=2,strides=(1,1))(x)
-        x = self._bn_relu_conv(layer_num=3,strides=(1,1))(x)
-        out = self._bn_relu_conv(layer_num=4,strides=(1,1))(x)
+        F = self._shortcut(input=x_in, residual=x,layer_num=1)
+        x = self._bn_relu_conv(layer_num=3,strides=(1,1))(F)
+        x = self._bn_relu_conv(layer_num=4,strides=(1,1))(x)
+        out = self._shortcut(input=F,residual=x,layer_num=2)
 #         out = Add(name=self.name_layer('Add'))([F,x])
 #         x = UpSampling2D()(x)
 
@@ -170,8 +200,7 @@ class EResNet():
     def __init__(self,
                  kernel_size=(3,3),
                  activations='relu',
-                 output_size=56**2,
-                 blocks=[1,2],
+                 blocks=[2,2],
                  ch=16,
                  CN=False,
                  y_dim=10,
@@ -191,30 +220,19 @@ class EResNet():
         dim = int(np.sqrt(self.output_size)/(2**len(self.enc_blocks)))
         feat_map = (dim,dim,self.dec_blocks[0]*self.ch)
 
-        x = Dense(np.prod(feat_map),activation=self.activations)(latent)
-        x = Reshape(feat_map)(x)
-        x = UpSampling2D()(x)
-
-        for i,num_units in enumerate(self.dec_blocks[1:]):
+        for i,num_blks in enumerate(self.enc_blocks):
             
-            x = ResBlock(num_units*self.ch,
+            x = EncResBlock(num_units*(i+1),
                          self.kernel_size,
                          activation=self.activations,
                          block_id=i+1,
                         )(x) 
             
-        x = BatchNormalization()(x)
-        x = Activation('relu')(x)
-        self.recon = Conv2DTranspose(1,
-                                self.kernel_size,
-                                activation='tanh',
-                                name='G_image',
-                                data_format='channels_last',padding='same')(x)
-        if self.flatten_out:
-            x = Flatten(name='G_image_flat')(self.recon)
-        else:
-            x = self.recon
-        
+        x = Flatten()(x)
+        x = Dense(self.y_dim+self.z_dim,'softmax')(x)
+
+        self.latent = x
+
         return x
     
     def __call__(self,x):
