@@ -1,5 +1,5 @@
 import os
-from .models import TandemVAEBuilder
+# from .models import TandemVAEBuilder
 from .losses import *
 from .keras_callbacks import *
 
@@ -16,6 +16,10 @@ from keras.activations import softmax,linear
 tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:-1],K.expand_dims(merge[:,-1])]
 
 def sse(y_true,y_pred):
+    y_shape = K.shape(y_true)
+    y_pred = K.reshape(y_pred,(y_shape[0],K.prod(y_shape[1:])))
+    y_true = K.reshape(y_true,(y_shape[0],K.prod(y_shape[1:])))
+        
     return K.sum(K.square(y_pred-y_true),axis=-1)
 
     
@@ -63,7 +67,7 @@ class Trainer(object):
         print('building decoder/generator...')
         G_input = Input(shape=(self.config.y_dim+self.config.z_dim,),name='G_input')
         self.G_output = self.Gbuilder(G_input)
-        self.D_fake = Activation(linear,name='D_fake')(self.E(self.G_output)[2])
+        # self.D_fake = Activation(linear,name='D_fake')(self.E(self.G_output)[2])
         self.G = Model(
             inputs=G_input,
             outputs=self.G_output,
@@ -105,7 +109,11 @@ class Trainer(object):
             'G': mse,
             
         }
+        
+        # XCov loss
         self.model.add_loss(self.config.xcov*XCov(self.y_class,self.z_lat)(self.y_class,self.z_lat)/self.config.batch_size)     
+        
+        # All other loss terms
         self.model.compile(
             optimizer=self.config.optimizer,
             loss=self.losses,

@@ -103,7 +103,7 @@ def enc_dec_samples(x_inp,sx_inp,Z,Y,generator,num_examples=5):
         # axs[i,2].set_yticklabels([])
     #     axs[2,i].set_xlabel("class: {}".format(str(np.argmax(y_class_enc[idx]))))
 
-        axs[i,3].imshow(Y[idx].reshape(-1,1).T,cmap='gray')
+        axs[i,3].imshow(Y[idx].reshape(-1,1).T,cmap='gray',vmin=0,vmax=1)
         axs[i,3].set_xlabel("class: {}".format(str(np.argmax(Y[idx]))))
         remove_labels(axs[i,3])
         # axs[i,3].set_xticklabels([])

@@ -54,7 +54,7 @@ class Shifted_Data_Loader():
         if flatten:
             self.input_shape = (784*self.scale*self.scale,)
         else:
-            self.input_shape = (28*self.scale,28*self.scale)
+            self.input_shape = (28*self.scale,28*self.scale,1)
             
         print('input_shape: ',self.input_shape)
         print('dataset: ',self.dataset)

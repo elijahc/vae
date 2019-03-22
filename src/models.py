@@ -2,7 +2,7 @@ from datetime import date
 import numpy as np
 import keras
 from keras.layers import Dense,Input,Lambda,Concatenate,Flatten,Reshape
-from keras.layers import Conv2D,Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add
+from keras.layers import Conv2D,Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add,AveragePooling2D
 from keras.models import Model,load_model
 from keras.regularizers import l2
 import keras.backend as K
@@ -24,29 +24,14 @@ def build_dense(inputs,layers,activations):
         x = Dense(num_units,activation=act)(x)
     return x
 
-class ConvBlock():
-    def __init__(self,units,kernel_size,activation='relu'):
-        self.units=units
-        self.kernel_size=kernel_size
-        self.activation = activation
-        
-    def __call__(self,x):
-        x = UpSampling2D()(x)
-        x = Conv2DTranspose(self.units,
-                            self.kernel_size,
-                            data_format='channels_last',padding='same')(x)
-        x = BatchNormalization()(x)
-        x = Activation(self.activation)(x)
-    
-        return x
-
 class ResBlock():
-    def __init__(self,units,kernel_size,activation='relu',block_id=None,cond_norm=None):
+    def __init__(self,units,kernel_size,activation='relu',block_id=None,cond_norm=None,first_block=False):
         self.units=units
         self.kernel_size=kernel_size
         self.activation = activation
         self.block_id = block_id
         self.cond_norm=cond_norm
+        self.first_block=first_block
 
     def _shortcut(self,input, residual, layer_num=1):
         """Adds a shortcut between input and residual block and merges them with "sum"
@@ -79,34 +64,33 @@ class ResBlock():
     def _bn_relu(self,layer_num=1):
         def f(x):
             x = BatchNormalization(name=self.name_layer('BN_{}'.format(layer_num)))(x)
-            x = Activation(self.activation,name=self.name_layer('ReLU_{}'.format(layer_num)))(x)
+            x = Activation(self.activation,
+                           name=self.name_layer('ReLU_{}'.format(layer_num)))(x)
             return x
         return f
     
-    def _bn_relu_conv(self,layer_num=1):
+    def res_layer(self,units,kernel_size,layer_num=1,conv_first=False):
+        conv = Conv2DTranspose(units,
+                name=self.name_layer('deconv_{}'.format(layer_num)),
+                kernel_size=kernel_size,
+                data_format='channels_last',padding='same')
         def f(x):
-            x = self._bn_relu(layer_num)
-                
+            if conv_first:
+                x = conv(x)
+                x = self._bn_relu(layer_num)(x)
+            else:
+                x = self._bn_relu(layer_num)(x)
+                x = conv(x)      
             return x
         return f
     
     def __call__(self,input,conditioner=None):
-        
-        
-        x = self._bn_relu(layer_num=1)(input)
-        x = Conv2DTranspose(self.units,
-                            name=self.name_layer('deconv_1'),
-                            kernel_size=(1,1),
-                            data_format='channels_last',padding='same')(x)
-        x = self._bn_relu(layer_num=2)(x)
-        x = Conv2DTranspose(self.units,
-                            name=self.name_layer('deconv_2'),
-                            kernel_size=(3,3),
-                            data_format='channels_last',padding='same')(x)
-        
-        
-        x = Add(name=self.name_layer('Add'))([F,x])
-        x = UpSampling2D()(x)
+        x = self.res_layer(units=self.units,kernel_size=(1,1),layer_num=1)(input)
+        x = self.res_layer(units=self.units,kernel_size=(3,3),layer_num=2)(x)
+#         x = self._bn_relu_conv(units=4*self.units,kernel_size=(1,1),layer_num=3)(x)
+        F = self._shortcut(input=input,residual=x,layer_num=1)
+#         x = Add(name=self.name_layer('Add'))([F,input])
+        x = UpSampling2D()(F)
 
         return x
     
@@ -120,87 +104,45 @@ class ResBlock():
     
 class EncResBlock(ResBlock):
 
-    def _bn_relu_conv(self,layer_num,strides):
-        def f(x):
-            x = self._bn_relu(layer_num=layer_num)(x)
-            x = Conv2D(self.units,
+    def res_layer(self,units,kernel_size,strides=(1,1),layer_num=1,conv_first=False,bn_relu=True):
+        conv = Conv2D(units,
             name=self.name_layer('conv_{}'.format(layer_num)),
-            kernel_size=self.kernel_size,strides=strides,
-            data_format='channels_last',padding='same')(x)
-            
+            kernel_size=kernel_size,strides=strides,
+            data_format='channels_last',padding='same')
+        
+        def f(x):
+            if conv_first:
+                x = conv(x)
+                if bn_relu:
+                    x = self._bn_relu(layer_num)(x)
+            else:
+                if bn_relu:
+                    x = self._bn_relu(layer_num)(x)
+                x = conv(x)      
             return x
         return f
     
     def __call__(self,x_in):
         
-        x = self._bn_relu_conv(layer_num=1,strides=(2,2))(x_in)
-        x = self._bn_relu_conv(layer_num=2,strides=(1,1))(x)
-        F = self._shortcut(input=x_in, residual=x,layer_num=1)
-        x = self._bn_relu_conv(layer_num=3,strides=(1,1))(F)
-        x = self._bn_relu_conv(layer_num=4,strides=(1,1))(x)
-        out = self._shortcut(input=F,residual=x,layer_num=2)
-#         out = Add(name=self.name_layer('Add'))([F,x])
-#         x = UpSampling2D()(x)
-
-        return out
+        if self.first_block:
+            x = self.res_layer(self.units,kernel_size=(3,3),layer_num=0,conv_first=True)(x_in)
+            x = self.res_layer(self.units,kernel_size=(1,1),strides=(1,1),layer_num=1,bn_relu=False)(x)
+#             x = self.res_layer(self.units,kernel_size(3,3),strides=(1,1),layer_num=2)
+        else:
+            x = self.res_layer(self.units,kernel_size=(3,3),strides=(2,2),layer_num=1)(x_in)
         
+        x = self.res_layer(self.units,
+                               kernel_size=(3,3),layer_num=2)(x)
+        F = self._shortcut(input=x_in,residual=x,layer_num=1)
+
+        return F
     
-class TandemVAEBuilder():
-    def __init__(
-        self,
-        enc_layers=[500,500],
-        y_dim=10,
-        z_dim=2,
-        activations='relu',
-        dec_layers=None,):
-
-        self.enc_layers = enc_layers
-        if dec_layers is None:
-            # assume symmetric
-            self.dec_layers = enc_layers.copy()
-            self.dec_layers.reverse()
-        self.y_dim = y_dim
-        self.z_dim = z_dim
-        self.activations='relu'
-        self.layers = []
-
-    def build(self,input_shape):
-        self.input_shape = input_shape
-        self.input = Input(shape=input_shape,name='input')
-
-        # Build encoder layers
-        x = Dense(self.enc_layers[0],activation=self.activations)(self.input)
-        self.layers.append(x)
-        for num_units in self.enc_layers[1:]:
-            x = Dense(num_units,activation=self.activations)(x)
-            self.layers.append(x)
-
-        # Build Latent representation layers
-        encoded = x
-        z_lat = Dense(self.z_dim,name='z_lat')(encoded)
-        self.layers.append(z_lat)
-        y_lat = Dense(self.y_dim,activation='softmax',name='y_lat')(encoded)
-        self.layers.append(y_lat)
-        lat_vec = Concatenate()([y_lat,z_lat])
-        self.layers.append(lat_vec)
-
-        # Build Decoder layers
-        x = Dense(self.dec_layers[0],activation=self.activations)(lat_vec)
-        self.layers.append(x)
-        for num_units in self.dec_layers[1:]:
-            x = Dense(num_units,activation=self.activations)(x)
-            self.layers.append(x)
-        recon = Dense(self.input_shape[0],activation='tanh',name='reconstruction')(x)
-        
-        self.output = recon
-
-        return Model(self.input,self.output)
-
 class EResNet():
     def __init__(self,
                  kernel_size=(3,3),
                  activations='relu',
                  blocks=[2,2],
+                 output_size=256,
                  ch=16,
                  CN=False,
                  y_dim=10,
@@ -209,31 +151,29 @@ class EResNet():
         self.kernel_size=kernel_size
         self.activations=activations
         self.output_size=output_size
-        self.blocks = dec_blocks
+        self.blocks = blocks
         self.ch = ch
         self.CN = CN
         self.y_dim=y_dim
         self.z_dim=z_dim
         
-    def build(self, input_shape):
+    def build(self, x):
         
-        dim = int(np.sqrt(self.output_size)/(2**len(self.enc_blocks)))
-        feat_map = (dim,dim,self.dec_blocks[0]*self.ch)
+        for i,num_units in enumerate(self.blocks):
+            x = EncResBlock(num_units,
+                self.kernel_size,
+                activation=self.activations,
+                block_id=i+1,
+                first_block=i==0,
+                )(x)
+        
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
+        x = AveragePooling2D(pool_size=4)(x)
+        y = Flatten()(x)
+        outputs = Dense(self.output_size,activation=self.activations)(y)
 
-        for i,num_blks in enumerate(self.enc_blocks):
-            
-            x = EncResBlock(num_units*(i+1),
-                         self.kernel_size,
-                         activation=self.activations,
-                         block_id=i+1,
-                        )(x) 
-            
-        x = Flatten()(x)
-        x = Dense(self.y_dim+self.z_dim,'softmax')(x)
-
-        self.latent = x
-
-        return x
+        return outputs
     
     def __call__(self,x):
         self.input = x
