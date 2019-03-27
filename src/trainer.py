@@ -162,7 +162,8 @@ class Trainer(object):
             **kwargs,
         )
         
-        
+        if not self.config.dev_mode:
+            self.save_model()
         
         return history
     

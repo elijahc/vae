@@ -34,12 +34,13 @@ def prepare_keras_dataset(x_train,y_train,x_test,y_test):
     return (x_train,y_train),(x_test,y_test)
 
 class Shifted_Data_Loader():
-    def __init__(self,dataset,scale=2,rotation=0.75,translation=0.75,flatten=True,train_downsample=None):
+    def __init__(self,dataset,scale=2,rotation=0.75,translation=0.75,flatten=True,train_downsample=None,autoload=True):
         self.scale=scale
         self.dataset=dataset
         self.rotation = rotation
         self.translation = translation
         self.train_downsample=train_downsample
+        self.flatten = flatten
         
         if self.rotation is not None:
             self.rotation=float(self.rotation)
@@ -87,6 +88,17 @@ class Shifted_Data_Loader():
         self.delta_train = np.empty((num_train,3))
         self.delta_test = np.empty((num_test,3))
         print('sx_train: ',self.sx_train.shape)
+        
+        self.x_train_orig = x_train
+        self.x_test_orig = x_test
+        self.x_train = norm_im(x_train,flatten)
+        self.x_test = norm_im(x_test,flatten)
+
+        if autoload:
+            self.gen_new_shifted(x_train,x_test,flatten)
+        
+    def gen_new_shifted(self,x_train,x_test,flatten=True):
+        
         print('making training data...')
         self.transform_im(x_train,self.sx_train,self.delta_train)
 
@@ -100,11 +112,8 @@ class Shifted_Data_Loader():
         
         # (x_train_pp,y_train_pp),(x_test_pp,y_test_pp) = prepare_keras_dataset(x_train,y_train,x_test,y_test)
 #         self.input_shape = self.input_shape+(1,)
-        self.x_train_orig = x_train
-        self.x_train = norm_im(x_train,flatten)
+        
         self.sx_train = norm_im(self.sx_train,flatten,)
-        self.x_test_orig = x_test
-        self.x_test = norm_im(x_test,flatten)
         self.sx_test = norm_im(self.sx_test,flatten)
         
     def transform_im(self,im_stack,output,delta):
@@ -147,6 +156,7 @@ class Shifted_Data_Loader():
         
         return new_im,[dx,dy]
 
+
     def rotate_image(self,X,rot_max=0.5,reshape=True):
         if rot_max is not None:
             angle_range = [rot_max*-180,rot_max*180]
@@ -165,6 +175,28 @@ class Shifted_Data_Loader():
             rot=0
         
         return new_im,[rot]
+    
+    def from_deltas(self,im_stack,output,dxs,dys,scale=2):
+        num_im = len(im_stack)
+        for i in range(num_im):
+            dx = dxs[i]
+            dy = dys[i]
+            letter = im_stack[i]
+            
+            new_im = self.regen_shift_image(letter,dx,dy,scale)
+                
+            output[i] = np.reshape(new_im,(1,)+self.input_shape)
+            
+        output = norm_im(output,self.flatten)
+    
+    def regen_shift_image(self,X,dx,dy,scale=2):
+        (x_sz,y_sz) = X.shape
+        bg_size = (28*scale,28*scale)
+        new_im = np.zeros(bg_size)
+
+        new_im[dx:dx+x_sz,dy:dy+y_sz] = X
+
+        return new_im
     
     def train_generator(self,batch_size):
         while True:

@@ -66,6 +66,10 @@ def load_config(model_dir):
         return config
     
 def save_config(config, dir_path):
+    # Enforce config is a dict
     
+    if not isinstance(config,dict):
+        config = vars(config)
+        
     with open(os.path.join(dir_path,'config.json'), 'w') as fp:
-        json.dump(vars(config), fp)
+        json.dump(config, fp)
