@@ -147,7 +147,7 @@ class Trainer(object):
         return total_loss
 
     def go(self,x,y,**kwargs):
-        print_history = PrintHistory(['G_loss','val_G_loss','val_class_acc'])
+        print_history = PrintHistory(['G_loss','val_G_loss','class_acc','val_class_acc'])
         callbacks=[
             print_history
         ]

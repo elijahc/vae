@@ -34,13 +34,14 @@ def prepare_keras_dataset(x_train,y_train,x_test,y_test):
     return (x_train,y_train),(x_test,y_test)
 
 class Shifted_Data_Loader():
-    def __init__(self,dataset,scale=2,rotation=0.75,translation=0.75,flatten=True,train_downsample=None,autoload=True):
+    def __init__(self,dataset,scale=2,rotation=0.75,translation=0.75,flatten=True,train_downsample=None,autoload=True,seed=None):
         self.scale=scale
         self.dataset=dataset
         self.rotation = rotation
         self.translation = translation
         self.train_downsample=train_downsample
         self.flatten = flatten
+        self.seed = seed
         
         if self.rotation is not None:
             self.rotation=float(self.rotation)
@@ -56,6 +57,9 @@ class Shifted_Data_Loader():
             self.input_shape = (784*self.scale*self.scale,)
         else:
             self.input_shape = (28*self.scale,28*self.scale,1)
+            
+        if seed is not None:
+            np.random.seed(7)
             
         print('input_shape: ',self.input_shape)
         print('dataset: ',self.dataset)
