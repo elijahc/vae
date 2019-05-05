@@ -19,9 +19,7 @@ class SliceAE(object):
         self.activations = activations
 
     def encoder(self,x):
-        print('building encoder...')
         layer_units = self.layer_units
-        
         if isinstance(self.activations,str):
             activations = [self.activations]*len(layer_units)
 
@@ -50,19 +48,8 @@ class SliceAE(object):
         self.y_rep = Dense(self.y_dim, activation='softmax',name='class')(net)
 
         latent_vec = Concatenate()([self.y_rep,self.z_rep])
-        
-        self.dx_rep = Dense(28, activation='softmax',name='loc_dx',)(self.z_rep)
-        self.dy_rep = Dense(28, activation='softmax',name='loc_dy',)(self.z_rep)
-
         """ Build Decoder """
-        self.G_input = Input(shape=(self.y_dim+self.z_dim,),name='G_input')
-        self.G_output = GResNet(z_dim=15,flatten_out=False)(self.G_input)
 
-        self.GS_dx_input = Input(shape=(28,),name='GS_dx_input')
-        self.GS_dy_input = Input(shape=(28,),name='GS_dy_input')
-        self.GS_im_input = Input(shape=(56,56,1,),name='GS_im_input')
-
-        self.GS_output = Lambda(self.slicer)([self.GS_dx_input,self.GS_dy_input,self.GS_im_input])
 
         """ Build Partials """
         self.E = Model(

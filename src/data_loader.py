@@ -5,6 +5,8 @@ from tqdm import tqdm as tqdm
 from tqdm import trange
 from scipy.ndimage import rotate
 
+from tqdm import tqdm as tqdm
+
 def get_loader(config):
     if config.dataset is 'mnist':
         from keras.datasets import mnist
@@ -33,15 +35,41 @@ def prepare_keras_dataset(x_train,y_train,x_test,y_test):
     # print(x_test.shape)
     return (x_train,y_train),(x_test,y_test)
 
+def upsample_dataset(dataset,n,axis=0,scale_idxs=False,dataset_sz=None):
+    if not scale_idxs and dataset_sz is None:
+        dataset_sz = dataset.shape[axis]
+    out = [dataset]
+    
+    # Extend by whole integers of the dataset
+    while n > dataset_sz:
+        out.append(dataset)
+        n += -dataset_sz
+    
+    # Extend by the last partial fragment
+    ext_idxs = np.arange(n)
+    out.append(dataset[ext_idxs])
+
+    return np.concatenate(out,axis=axis)
+    
 class Shifted_Data_Loader():
-    def __init__(self,dataset,scale=2,rotation=0.75,translation=0.75,flatten=True,train_downsample=None,autoload=True,seed=None):
+    def __init__(self,dataset,
+                 scale=2,
+                 rotation=0.75,
+                 translation=0.75,
+                 flatten=True,
+                 num_train=60000,
+                 autoload=True,
+                 seed=None,
+                 bg_noise=None,
+                ):
         self.scale=scale
         self.dataset=dataset
         self.rotation = rotation
         self.translation = translation
-        self.train_downsample=train_downsample
+        self.num_train=num_train
         self.flatten = flatten
         self.seed = seed
+        self.bg_noise = bg_noise
         
         if self.rotation is not None:
             self.rotation=float(self.rotation)
@@ -66,6 +94,8 @@ class Shifted_Data_Loader():
         print('scale: ',self.scale)
         print('tx_max: ', self.translation)
         print('rot_max: ', self.rotation)
+        print('bg_noise:', self.bg_noise)
+
         
         print('loading {}...'.format(self.dataset))
         if dataset=='mnist':
@@ -76,8 +106,11 @@ class Shifted_Data_Loader():
             from keras.datasets import fashion_mnist
             (x_train, y_train),(x_test, y_test) = fashion_mnist.load_data()
         
-        if self.train_downsample is not None:
-            pass
+        if self.num_train > 60000:
+            num_add = int(self.num_train-60000)
+            x_train = upsample_dataset(x_train,n=num_add)
+            y_train = upsample_dataset(y_train,n=num_add)
+        
         self.y_train = y_train
         self.y_test = y_test
         self.y_train_oh = to_categorical(y_train)
@@ -93,13 +126,24 @@ class Shifted_Data_Loader():
         self.delta_test = np.empty((num_test,3))
         print('sx_train: ',self.sx_train.shape)
         
-        self.x_train_orig = x_train
-        self.x_test_orig = x_test
+        self.x_train_orig = x_train.copy()
+        self.x_test_orig = x_test.copy()
         self.x_train = norm_im(x_train,flatten)
         self.x_test = norm_im(x_test,flatten)
 
         if autoload:
             self.gen_new_shifted(x_train,x_test,flatten)
+        
+        
+    def add_bg_noise(self,im_stack):
+        bg_size = im_stack.shape
+        new_bg = np.random.uniform(high=int(self.bg_noise*255),size=bg_size)
+        X_mask = (im_stack>0).astype(np.int)
+        obj_noise = X_mask*new_bg
+        im_stack += new_bg
+        im_stack += -obj_noise
+        
+        return new_bg
         
     def gen_new_shifted(self,x_train,x_test,flatten=True):
         
@@ -117,8 +161,22 @@ class Shifted_Data_Loader():
         # (x_train_pp,y_train_pp),(x_test_pp,y_test_pp) = prepare_keras_dataset(x_train,y_train,x_test,y_test)
 #         self.input_shape = self.input_shape+(1,)
         
+    
+        # Check if background should have added uniform noise
+        if self.bg_noise is not None: 
+            self.fg_train = self.sx_train.copy()
+            self.bg_train = self.add_bg_noise(self.sx_train)
+            self.bg_train = norm_im(self.bg_train,flatten,)
+            self.fg_train = norm_im(self.fg_train,flatten,)
+            
+            self.fg_test = self.sx_test.copy()
+            self.bg_test = self.add_bg_noise(self.sx_test)
+            self.bg_test = norm_im(self.bg_test,flatten,)
+            self.fg_test = norm_im(self.fg_test,flatten,)
+            
         self.sx_train = norm_im(self.sx_train,flatten,)
-        self.sx_test = norm_im(self.sx_test,flatten)
+        self.sx_test = norm_im(self.sx_test,flatten,)
+#         self.sx_test = norm_im(self.sx_test,flatten)
         
     def transform_im(self,im_stack,output,delta):
         num_im = len(im_stack)
@@ -129,7 +187,7 @@ class Shifted_Data_Loader():
             else:
                 new_im = letter
                 rot = [0]
-            
+                
             new_im,offsets = self.shift_image(letter,max_translation=self.translation)
                 
             output[i] = np.reshape(new_im,(1,)+self.input_shape)
@@ -139,6 +197,7 @@ class Shifted_Data_Loader():
     def shift_image(self,X,max_translation):
         (x_sz,y_sz) = X.shape
         bg_size = (28*self.scale,28*self.scale)
+
         if max_translation is not None:
             dx_max = dy_max = int(28/2*(self.scale-1)*max_translation)
 
@@ -154,8 +213,8 @@ class Shifted_Data_Loader():
             dx = int(x_sz/2)
             dy = int(y_sz/2)
             
+        
         new_im = np.zeros(bg_size)
-
         new_im[dx:dx+x_sz,dy:dy+y_sz] = X
         
         return new_im,[dx,dy]
@@ -201,6 +260,21 @@ class Shifted_Data_Loader():
         new_im[dx:dx+x_sz,dy:dy+y_sz] = X
 
         return new_im
+    
+    def gen_corrupted_shift_image(self,corr_idxs,corr_labels):
+        print('generating train_sx_corr...')
+        self.sx_train_corrupted = self.sx_train.copy()
+#         self.sx_train_corrupted = np.squeeze(self.sx_train_corrupted)
+        masks_by_label = [self.y_train==n for n in np.arange(10)]
+        idxs_by_label = [np.arange(len(self.x_train))[m] for m in masks_by_label]
+        false_options = [list(filter(lambda x: x!= i,np.arange(10))) for i in np.arange(10)]
+        for idx in tqdm(corr_idxs):
+            new_lab = np.random.choice(false_options[self.y_train[idx]])
+            (dx,dy,dr) = self.delta_train[idx]
+            new_X = self.x_train_orig[np.random.choice(idxs_by_label[new_lab])]
+            new_im = self.regen_shift_image(new_X,int(dx),int(dy),scale=self.scale)
+            new_im = norm_im(np.reshape(new_im,(1,)+self.input_shape),self.flatten)
+            self.sx_train_corrupted[idx] = new_im
     
     def train_generator(self,batch_size):
         while True:

@@ -70,6 +70,9 @@ def save_config(config, dir_path):
     
     if not isinstance(config,dict):
         config = vars(config)
-        
+    
+    if not isinstance(config['optimizer'],str):
+        config['optimizer'] = '{}(lr={})'.format(str(type(config['optimizer'])),str(config['optimizer'].lr))
+    
     with open(os.path.join(dir_path,'config.json'), 'w') as fp:
         json.dump(config, fp)

@@ -239,3 +239,9 @@ class ElasticSearchMonitor(RemoteMonitor):
         
         print('posted epoch results!')
         print(payload)
+
+def scalar_pmf(a):
+    ct = Counter(a)
+    pmf = {k:v/float(sum(ct.values())) for k,v in ct.items()}
+    
+    return pmf

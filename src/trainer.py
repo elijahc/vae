@@ -4,11 +4,12 @@ from .losses import *
 from .keras_callbacks import *
 
 import keras.backend as K
+import tensorflow as tf
 from keras.callbacks import Callback,EarlyStopping
 from keras.losses import categorical_crossentropy
 from keras.metrics import categorical_accuracy
 from keras.models import model_from_json,Model
-from keras.layers import Concatenate,Dense,Input,Lambda,Activation
+from keras.layers import Concatenate,Dense,Input,Lambda,Activation,Add
 from keras.activations import softmax,linear
 
 
@@ -16,13 +17,29 @@ from keras.activations import softmax,linear
 tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:-1],K.expand_dims(merge[:,-1])]
 
 def sse(y_true,y_pred):
-    y_shape = K.shape(y_true)
+    y_shape = K.shape(y_pred)
     y_pred = K.reshape(y_pred,(y_shape[0],K.prod(y_shape[1:])))
     y_true = K.reshape(y_true,(y_shape[0],K.prod(y_shape[1:])))
         
     return K.sum(K.square(y_pred-y_true),axis=-1)
-
     
+def masked_sse(y_true,y_pred):
+    y_shape = K.shape(y_pred)
+
+#     y_m_rescale = ((y_true*256-1)/255)
+    y_mask = tf.ceil(y_true)
+    y_mask = K.reshape(y_mask,(y_shape[0],K.prod(y_shape[1:])))
+
+    y_pred = K.reshape(y_pred,(y_shape[0],K.prod(y_shape[1:])))
+#     y_pred = tf.boolean_mask(y_pred,y_mask)
+    
+    y_true = K.reshape(y_true,(y_shape[0],K.prod(y_shape[1:])))
+#     y_true = tf.boolean_mask(y_true,y_mask)
+    
+    fg_loss = K.sum(y_mask*K.square(y_pred-y_true),axis=-1)
+    
+    return fg_loss
+
 class Trainer(object):
     def __init__(self,config,data_loader,Ebuilder,Gbuilder,load_model=None):
         self.config = config
@@ -63,11 +80,21 @@ class Trainer(object):
     def build_model(self,input_shape):
         self.build_encoder(input_shape)
         latent_vec = Concatenate()([self.y_class,self.z_lat])
+#         bg_seed = Concatenate()([self.z_lat,self.D_real])
+
 
         print('building decoder/generator...')
         G_input = Input(shape=(self.config.y_dim+self.config.z_dim,),name='G_input')
+#         bG_input = Input(shape=(self.config.z_dim+1,),name='bG_input')
         self.G_output = self.Gbuilder(G_input)
+        # self.bG_output = self.Gbuilder(bG_input)
+#         self.G_output = Add()([self.fG_output,self.bG_output])
         # self.D_fake = Activation(linear,name='D_fake')(self.E(self.G_output)[2])
+#         self.fG = Model(
+#             inputs=fG_input,
+#             outputs=self.fG_output,
+#             name='fG'
+#         )
         self.G = Model(
             inputs=G_input,
             outputs=self.G_output,
@@ -86,7 +113,10 @@ class Trainer(object):
         
         self.model = Model(
             inputs=self.input,
-            outputs=[self.G(latent_vec),self.y_class],
+            outputs=[
+#                 self.fG(latent_vec),
+                self.G(latent_vec),
+                self.y_class],
         )  
         
     def compile_model(self):
@@ -96,13 +126,15 @@ class Trainer(object):
         
         self.losses = {
             'class': 'categorical_crossentropy',
-            # 'D_real': 'binary_crossentropy',
-            'G': sse
+#             'fG': sse,
+            'G': sse,
         }
+        
         lossWeights = {
             "class": self.config.xent,
-            # "D_real": 0.0,
-            'G': self.config.recon
+#             "fG": self.config.recon*0.4,
+            "G": self.config.recon,
+#             'G': self.config.recon*0.75
         }
         metrics = {
             'class': 'accuracy',
