@@ -64,7 +64,8 @@ class Trainer(object):
 #         self.y_lat = Dense(self.config.y_dim,activation='relu',name='y_lat')(E_output)
         self.enc_merge = Dense(self.config.y_dim+self.config.z_dim+1,name='enc_merge')(E_output)
         split_enc = Lambda(tf_split_enc,arguments={'y_dim':self.config.y_dim})(self.enc_merge)
-        self.y_class = Activation(softmax,name='class')(split_enc[0])
+        self.y_lat = Activation(linear,name='y_lat')(split_enc[0])
+        self.y_class = Dense(10,name='class',activation=softmax)(self.y_lat)
         self.z_lat = Activation(linear,name='z_lat')(split_enc[1])
         self.D_real = Activation(linear,name='D_real')(split_enc[2])
     
@@ -79,7 +80,7 @@ class Trainer(object):
         
     def build_model(self,input_shape):
         self.build_encoder(input_shape)
-        latent_vec = Concatenate()([self.y_class,self.z_lat])
+        latent_vec = Concatenate()([self.y_lat,self.z_lat])
 #         bg_seed = Concatenate()([self.z_lat,self.D_real])
 
 

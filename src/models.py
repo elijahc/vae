@@ -4,7 +4,7 @@ import keras
 from keras.layers import Dense,Input,Lambda,Concatenate,Flatten,Reshape
 from keras.layers import Conv2D,Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add,AveragePooling2D
 from keras.models import Model,load_model
-from keras.regularizers import l2
+from keras.regularizers import l2,l1
 import keras.backend as K
 # from ..layers import FiLM
 # from tabulate import tabulate
@@ -188,7 +188,8 @@ class EDenseNet():
                  activations='relu',
                  dec_layers=None,
                  y_dim=10,
-                 z_dim=2
+                 z_dim=2,
+                 regularizer_weight=None,
                 ):
         
         self.enc_layers = enc_layers
@@ -197,16 +198,25 @@ class EDenseNet():
         self.z_dim = z_dim
         self.activations='relu'
         self.layers = []
+        self.regularizer_weight=regularizer_weight
         
     def build(self,input_shape):
         self.input_shape = input_shape
         self.input = Input(shape=input_shape,name='input')
 
         # Build encoder layers
-        x = Dense(self.enc_layers[0],activation=self.activations)(self.input)
+        if self.regularizer_weight is not None:
+            reg = l1(0.01)
+        else:
+            reg = None
+        x = Dense(self.enc_layers[0],activation=self.activations,kernel_regularizer=reg)(self.input)
         self.layers.append(x)
         for num_units in self.enc_layers[1:]:
-            x = Dense(num_units,activation=self.activations)(x)
+            if self.regularizer_weight is not None:
+                reg = l1(0.01)
+            else:
+                reg = None
+            x = Dense(num_units,activation=self.activations,kernel_regularizer=reg)(x)
             self.layers.append(x)
             
         self.encoded = x
@@ -317,19 +327,29 @@ class GResNet():
         return self.output
 
 class EDense():
-    def __init__(self,enc_layers=[500,500],activations='relu',y_dim=10,z_dim=2,):
+    def __init__(self,enc_layers=[500,500],activations='relu',y_dim=10,z_dim=2,regularizer_weight=None):
         self.enc_layers = enc_layers
         self.activations='relu'
         self.y_dim = y_dim
         self.z_dim = z_dim
         self.layers=[]
+        self.regularizer_weight=regularizer_weight
         
     def build(self,x):
         # Build encoder layers
-        x = Dense(self.enc_layers[0],activation=self.activations)(x)
+        if self.regularizer_weight is not None:
+            reg = l1(self.regularizer_weight)
+        else:
+            reg = None
+        x = Dense(self.enc_layers[0],activation=self.activations,kernel_regularizer=reg)(x)
+
         self.layers.append(x)
         for num_units in self.enc_layers[1:]:
-            x = Dense(num_units,activation=self.activations)(x)
+            if self.regularizer_weight is not None:
+                reg = l1(self.regularizer_weight)
+            else:
+                reg = None
+            x = Dense(num_units,activation=self.activations,kernel_regularizer=reg)(x)
             self.layers.append(x)
         
         return x
