@@ -2,7 +2,7 @@ from datetime import date
 import numpy as np
 import keras
 from keras.layers import Dense,Input,Lambda,Concatenate,Flatten,Reshape
-from keras.layers import Conv2D,Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add,AveragePooling2D
+from keras.layers import Conv2D,Conv2DTranspose,UpSampling2D,BatchNormalization,Activation,Add,AveragePooling2D,MaxPooling2D
 from keras.models import Model,load_model
 from keras.regularizers import l2,l1
 import keras.backend as K
@@ -101,13 +101,46 @@ class ResBlock():
             return prefix+'_'+layer_name
         else:
             return None
+
+class EncConvBlock(object):
+    def __init__(self,units,kernel_size,activation='relu',block_id=None,cond_norm=None,first_block=False):
+        self.units=units
+        self.kernel_size=kernel_size
+        self.activation = activation
+        self.block_id = block_id
+        self.cond_norm=cond_norm
+        self.first_block=first_block
     
+    def conv_layer(self,units,kernel_size,activation='relu',strides=(1,1),layer_num=1):
+        conv = Conv2D(units,
+                name=self.name_layer('conv_{}'.format(layer_num)),
+                kernel_size=kernel_size,strides=strides,
+                # kernel_regularizer='',
+                activation=activation,
+                data_format='channels_last',padding='same')
+
+        return conv
+    
+    def name_layer(self,layer_name):
+        if self.block_id is not None:
+            prefix = 'block_'+str(int(self.block_id))
+            return prefix+'_'+layer_name
+        else:
+            return None
+        
+    def __call__(self,x_in):
+        x = self.conv_layer(units=self.units,
+                            kernel_size=(3,3),strides=(2,2),layer_num=1)(x_in)
+
+        return x
+
 class EncResBlock(ResBlock):
 
     def res_layer(self,units,kernel_size,strides=(1,1),layer_num=1,conv_first=False,bn_relu=True):
         conv = Conv2D(units,
             name=self.name_layer('conv_{}'.format(layer_num)),
             kernel_size=kernel_size,strides=strides,
+            # kernel_regularizer='',
             data_format='channels_last',padding='same')
         
         def f(x):
@@ -136,13 +169,57 @@ class EncResBlock(ResBlock):
         F = self._shortcut(input=x_in,residual=x,layer_num=1)
 
         return F
-    
-class EResNet():
+
+
+class EConvNet():
     def __init__(self,
                  kernel_size=(3,3),
                  activations='relu',
                  blocks=[2,2],
                  output_size=256,
+                 ch=16,
+                 CN=False,
+                 y_dim=10,
+                 z_dim=2,
+                ):
+        self.kernel_size=kernel_size
+        self.activations=activations
+        self.output_size=output_size
+        self.blocks = blocks
+        self.ch = ch
+        self.CN = CN
+        self.y_dim=y_dim
+        self.z_dim=z_dim
+        
+    def build(self, x):
+        
+        for i,num_units in enumerate(self.blocks):
+            x = EncConvBlock(
+                units=num_units,
+                kernel_size=self.kernel_size,
+                activation=self.activations,
+                )(x)
+        
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
+        x = AveragePooling2D(pool_size=4)(x)
+        y = Flatten()(x)
+        outputs = Dense(self.output_size,activation='linear')(y)
+
+        return outputs
+    
+    def __call__(self,x):
+        self.input = x
+        self.output = self.build(self.input)
+        
+        return self.output
+        
+class EResNet():
+    def __init__(self,
+                 kernel_size=(3,3),
+                 activations='relu',
+                 blocks=[2,2],
+                 output_size=512,
                  ch=16,
                  CN=False,
                  y_dim=10,
@@ -171,7 +248,7 @@ class EResNet():
         x = Activation('relu')(x)
         x = AveragePooling2D(pool_size=4)(x)
         y = Flatten()(x)
-        outputs = Dense(self.output_size,activation=self.activations)(y)
+        outputs = Dense(self.output_size,activation='linear')(y)
 
         return outputs
     

@@ -10,11 +10,14 @@ from keras.losses import categorical_crossentropy
 from keras.metrics import categorical_accuracy
 from keras.models import model_from_json,Model
 from keras.layers import Concatenate,Dense,Input,Lambda,Activation,Add
-from keras.activations import softmax,linear
+from keras.activations import softmax,linear,relu
 
 
 # tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:]]
 tf_split_enc= lambda merge,y_dim: [merge[:,:y_dim],merge[:,y_dim:-1],K.expand_dims(merge[:,-1])]
+
+def mse(y_true,y_pred):
+    return K.mean(K.sum(K.square(y_pred-y_true),axis=-1),axis=0)
 
 def sse(y_true,y_pred):
     y_shape = K.shape(y_pred)
@@ -22,6 +25,11 @@ def sse(y_true,y_pred):
     y_true = K.reshape(y_true,(y_shape[0],K.prod(y_shape[1:])))
         
     return K.sum(K.square(y_pred-y_true),axis=-1)
+
+def mean_squared_logarithmic_error(y_true, y_pred):
+    first_log = K.log(K.clip(y_pred, K.epsilon(), None) + 1.)
+    second_log = K.log(K.clip(y_true, K.epsilon(), None) + 1.)
+    return K.mean(K.square(first_log - second_log), axis=-1)
     
 def masked_sse(y_true,y_pred):
     y_shape = K.shape(y_pred)
@@ -41,10 +49,11 @@ def masked_sse(y_true,y_pred):
     return fg_loss
 
 class Trainer(object):
-    def __init__(self,config,data_loader,Ebuilder,Gbuilder,load_model=None):
+    def __init__(self,config,data_loader,Ebuilder,Gbuilder,load_model=None,y_class_dim=10):
         self.config = config
         self.optimizer = self.config.optimizer
         self.batch_size = self.config.batch_size
+        self.y_class_dim = y_class_dim
         if load_model is not None:
             self.load_model(mod_name=str(load_model))
         else:
@@ -65,7 +74,7 @@ class Trainer(object):
         self.enc_merge = Dense(self.config.y_dim+self.config.z_dim+1,name='enc_merge')(E_output)
         split_enc = Lambda(tf_split_enc,arguments={'y_dim':self.config.y_dim})(self.enc_merge)
         self.y_lat = Activation(linear,name='y_lat')(split_enc[0])
-        self.y_class = Dense(10,name='class',activation=softmax)(self.y_lat)
+        self.y_class = Dense(self.y_class_dim,name='class',activation=softmax)(self.y_lat)
         self.z_lat = Activation(linear,name='z_lat')(split_enc[1])
         self.D_real = Activation(linear,name='D_real')(split_enc[2])
     
@@ -82,20 +91,10 @@ class Trainer(object):
         self.build_encoder(input_shape)
         latent_vec = Concatenate()([self.y_lat,self.z_lat])
 #         bg_seed = Concatenate()([self.z_lat,self.D_real])
-
-
         print('building decoder/generator...')
         G_input = Input(shape=(self.config.y_dim+self.config.z_dim,),name='G_input')
-#         bG_input = Input(shape=(self.config.z_dim+1,),name='bG_input')
         self.G_output = self.Gbuilder(G_input)
-        # self.bG_output = self.Gbuilder(bG_input)
-#         self.G_output = Add()([self.fG_output,self.bG_output])
-        # self.D_fake = Activation(linear,name='D_fake')(self.E(self.G_output)[2])
-#         self.fG = Model(
-#             inputs=fG_input,
-#             outputs=self.fG_output,
-#             name='fG'
-#         )
+
         self.G = Model(
             inputs=G_input,
             outputs=self.G_output,
@@ -111,23 +110,18 @@ class Trainer(object):
 #             outputs=self.D_real,
 #             name='D'
 #         )
-        
+    
         self.model = Model(
             inputs=self.input,
-            outputs=[
-#                 self.fG(latent_vec),
-                self.G(latent_vec),
-                self.y_class],
+            outputs=[self.G(latent_vec),self.y_class],
         )  
         
     def compile_model(self):
-
-        def mse(y_true,y_pred):
-            return K.mean(K.sum(K.square(y_pred-y_true),axis=-1),axis=0)
         
         self.losses = {
             'class': 'categorical_crossentropy',
 #             'fG': sse,
+#             'G': mean_squared_logarithmic_error,
             'G': sse,
         }
         
@@ -180,7 +174,7 @@ class Trainer(object):
         return total_loss
 
     def go(self,x,y,**kwargs):
-        print_history = PrintHistory(['G_loss','val_G_loss','class_acc','val_class_acc'])
+        print_history = PrintHistory(['loss','G_loss','class_loss','class_acc','val_class_acc'])
         callbacks=[
             print_history
         ]

@@ -7,15 +7,19 @@ import keras.backend as K
 import tensorflow as tf
 
 class PrintHistory(Callback):
-    def __init__(self,print_keys=None):
+    def __init__(self,print_keys=None,labels=None):
         if print_keys is None:
             print_keys = ['G_loss','val_G_loss','val_D_real_loss']
         
+        if labels is None:
+            labels = {k:k for k in print_keys}
+        
         self.print_keys = print_keys
+        self.labels = labels
 
     def on_train_begin(self,logs={}):
         self.col_width = 5+7
-        print('Epoch'.ljust(self.col_width),"".join(w.ljust(self.col_width) for w in self.print_keys))
+        print('Epoch'.ljust(self.col_width),"".join(self.labels[w].ljust(self.col_width) for w in self.print_keys))
         pass
 
     def on_epoch_end(self,epoch,logs={}):

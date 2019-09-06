@@ -52,8 +52,8 @@ def orig_vs_transformed(DL,index=None,part='test',cmap='gray',clean=True):
     
     
     figure,axs = plt.subplots(1,2)
-    axs[0].imshow(X[index].reshape(28,28),cmap=cmap)
-    axs[1].imshow(sX[index].reshape(DL.scale*28,DL.scale*28),cmap=cmap)
+    axs[0].imshow(X[index].reshape(28,28),cmap=cmap,vmin=0,vmax=1)
+    axs[1].imshow(sX[index].reshape(DL.scale*28,DL.scale*28),cmap=cmap,vmin=0,vmax=1)
     
     if clean:
         axs[0].get_xaxis().set_visible(False)

@@ -1,9 +1,16 @@
 import os
 import numpy as np
+import pandas as pd
 from keras.utils import to_categorical
 from tqdm import tqdm as tqdm
 from tqdm import trange
+import skimage as skim
 from scipy.ndimage import rotate
+from scipy import stats
+from sklearn.preprocessing import MinMaxScaler
+from edcutils.datasets import bsds500
+from edcutils.image import get_patch
+
 
 from tqdm import tqdm as tqdm
 
@@ -15,6 +22,12 @@ def get_loader(config):
         from keras.datasets import fashion_mnist
         return prepare_keras_dataset(fashion_mnist)
 
+def norm_to_8bit(X,flatten=True):
+    X = (X*255).astype('int8')
+    if flatten:
+        X = X.reshape( (len(X), np.prod(X.shape[1:])) )
+    
+    return X
 
 def norm_im(X,flatten=True):
     X = X.astype('float32') / 255.
@@ -22,6 +35,27 @@ def norm_im(X,flatten=True):
         X = X.reshape( (len(X), np.prod(X.shape[1:])) )
     
     return X
+
+def rescale_contrast(im_stack,c_level):
+    out_im = im_stack * c_level
+    out_im += (1-c_level)/2
+    
+    return out_im
+
+def compose_image(digit, background,blend='difference'):
+    """Difference-blend a digit and a random patch from a background image."""
+    w, h, _ = background.shape
+    dw, dh, _ = digit.shape
+    x = np.random.randint(0, w - dw)
+    y = np.random.randint(0, h - dh)
+    
+    bg = background[x:x+dw, y:y+dh]
+    if blend is None or blend == 'none':
+        pass
+    elif blend == 'difference':
+        im = np.abs(bg - digit).astype(np.uint8)
+        
+    return im
 
 def prepare_keras_dataset(x_train,y_train,x_test,y_test):
     # (x_train, y_train), (x_test, y_test) = k_data.load_data()
@@ -50,27 +84,117 @@ def upsample_dataset(dataset,n,axis=0,scale_idxs=False,dataset_sz=None):
     out.append(dataset[ext_idxs])
 
     return np.concatenate(out,axis=axis)
+
+def _fast_tx(max_translation,size=1,scale=2,seed=7,im_shape=(56,56)):
+    np.random.seed(seed)
+    (x_sz,y_sz) = im_shape
+    bg_size = (28*scale,28*scale)
+    dx_max = dy_max = int(28/2*(self.scale-1)*max_translation)
     
+    tx={
+        'dx':[],
+        'dy':[],
+    }
+    for _ in np.arange(size):
+        dx = int(np.random.randint(-dx_max,dx_max)+x_sz/2)
+        dy = int(np.random.randint(-dy_max,dy_max)+y_sz/2)
+
+        dx = max(dx,0)
+        dx = min(dx,bg_size[0]-x_sz)
+        tx['dx'].append(dx)
+        
+        dy = max(dy,0)
+        dy = min(dy,bg_size[0]-y_sz)
+        tx['dy'].append(dy)
+        
+    return tx
+        
 class Shifted_Data_Loader():
+    def gen_uniform_noise(self,im_stack,width=1,amount=1):
+        bg_size = im_stack.shape
+        hw = width/2.0
+        noise_bg = np.random.uniform(low=-hw,high=hw,size=bg_size)
+        if amount < 1:
+            revert_idxs = np.random.uniform(size=bg_size)>amount
+            noise_bg[revert_idxs]=im_stack[revert_idxs]
+            
+#         noise_bg = norm_im(new_bg,flatten=False)
+        
+        return noise_bg
+        
+    def gen_skimage_noise(self,im_stack,mode='gaussian',**noise_kws):
+        noise_ims = skim.util.random_noise(im_stack,mode=mode,**noise_kws)
+#         noise_ims = norm_to_8bit(noise_ims,flatten=self.flatten)
+        
+        return noise_ims
+    
+    def gen_bg_noise(self,im_stack,mode='uniform',**noise_kws):
+        # Generate the noise
+        if mode is 'uniform':
+            if 'width' not in noise_kws.keys():
+                noise_kws['width'] = self.bg_noise
+            
+            if 'amount' not in noise_kws.keys():
+                noise_kws['amount'] = 1
+            
+            print('creating noise uniform({})...'.format(noise_kws))
+            noise_im = self.gen_uniform_noise(im_stack,**noise_kws)
+        else:
+            print('creating noise {}({})...'.format(mode,noise_kws))
+            noise_im = self.gen_skimage_noise(im_stack,mode=mode,**noise_kws)
+        
+        return noise_im
+    
     def __init__(self,dataset,
                  scale=2,
                  rotation=0.75,
                  translation=0.75,
+                 scaling_range=0.4,
                  flatten=True,
                  num_train=60000,
                  autoload=True,
                  seed=None,
                  bg_noise=None,
+                 contrast_level=1,
+                 bg=None,
+                 noise_mode=None,
+                 bg_only=True,
+                 noise_kws=None,
+                 blend=None,
                 ):
         self.scale=scale
         self.dataset=dataset
+        self.num_train=num_train
+        self.seed = seed
+        
+        # Image Manipulations
         self.rotation = rotation
         self.translation = translation
-        self.num_train=num_train
+        self.scaling_range = scaling_range
         self.flatten = flatten
-        self.seed = seed
+        self.contrast_level = contrast_level
+
+        # Background
+        self.bg = bg
         self.bg_noise = bg_noise
+        self.bg_only = bg_only
+        self.blend = blend
+
+        # Noise
+        self.noise_mode = noise_mode
+        if noise_kws is None:
+            self.noise_kws={}
+        elif noise_kws is not None:
+            self.noise_kws=noise_kws
+        elif bg_noise is not None and self.noise_mode is None:
+            self.noise_mode = 'uniform'
+            self.noise_kws = {
+                'width': bg_noise,
+                'amount': 1.0,
+            }
         
+        self.flatten_arr = lambda X: X.reshape( (len(X), np.prod(X.shape[1:])) )
+                
         if self.rotation is not None:
             self.rotation=float(self.rotation)
             assert self.rotation >= 0.0
@@ -86,18 +210,26 @@ class Shifted_Data_Loader():
         else:
             self.input_shape = (28*self.scale,28*self.scale,1)
             
-        if seed is not None:
+        if seed is None:
             np.random.seed(7)
             
         print('input_shape: ',self.input_shape)
         print('dataset: ',self.dataset)
+        print('background: ', self.bg)
+        print('blend mode: ', self.blend)
         print('scale: ',self.scale)
         print('tx_max: ', self.translation)
         print('rot_max: ', self.rotation)
-        print('bg_noise:', self.bg_noise)
+        print('contrast_level: ', self.contrast_level)
+        print('noise_mode: ', self.noise_mode)
+        
+        noise_kws_strs = ['  {}: {}'.format(k,self.noise_kws[k]) for k in self.noise_kws.keys()]
+        for s in noise_kws_strs:
+            print(s)
+#         print('bg_noise:', self.bg_noise)
 
         
-        print('loading {}...'.format(self.dataset))
+#         print('loading {}...'.format(self.dataset))
         if dataset=='mnist':
             from keras.datasets import mnist
             (x_train, y_train),(x_test, y_test) = mnist.load_data()
@@ -119,9 +251,27 @@ class Shifted_Data_Loader():
         num_train = len(self.y_train)
         num_test =  len(self.y_test)
 
-        self.sx_train = np.empty((num_train,)+self.input_shape)
-        self.sx_test =  np.empty((num_test,)+self.input_shape)
-
+        self.sx_train = np.zeros((num_train,)+self.input_shape)
+        self.sx_test =  np.zeros((num_test,)+self.input_shape)
+        
+        self.bg_train = np.zeros_like(self.sx_train)
+        self.bg_test = np.zeros_like(self.sx_test)
+        
+        
+        if self.bg == 'natural':
+            bg_imgs,_ = bsds500.load_data()
+            self.bg_train = self.gen_backgrounds(self.sx_train,bg_imgs)
+            self.bg_train = np.expand_dims(skim.color.rgb2gray(self.bg_train),-1)
+            
+            self.bg_test = self.gen_backgrounds(self.sx_test,bg_imgs)
+            self.bg_test = np.expand_dims(skim.color.rgb2gray(self.bg_test),-1)
+            
+        self.bg_combined = np.concatenate([self.bg_train,self.bg_test],axis=0)
+        
+        if self.noise_mode is not None:
+            self.regen_bg_noise(mode=self.noise_mode,**noise_kws)
+            
+            
         self.delta_train = np.empty((num_train,3))
         self.delta_test = np.empty((num_test,3))
         print('sx_train: ',self.sx_train.shape)
@@ -132,55 +282,137 @@ class Shifted_Data_Loader():
         self.x_test = norm_im(x_test,flatten)
 
         if autoload:
-            self.gen_new_shifted(x_train,x_test,flatten)
+            self.gen_new_shifted(x_train,x_test,flatten)        
         
+    
+    def add_natural_bg(self,im_stack,bg_imgs,blend='difference',bg_contrast=1):
+        n, w, h, _ = im_stack.shape
         
-    def add_bg_noise(self,im_stack):
-        bg_size = im_stack.shape
-        new_bg = np.random.uniform(high=int(self.bg_noise*255),size=bg_size)
-        X_mask = (im_stack>0).astype(np.int)
-        obj_noise = X_mask*new_bg
-        im_stack += new_bg
-        im_stack += -obj_noise
+        X_ = np.zeros([n,w,h,3],np.uint8)
+        for i in np.arange(n):
+            d = im_stack[i]
+            d = d.reshape([w, h, 1]) * 255
+            d = d.astype(np.int)
+            d = np.concatenate([d, d, d], 2)
+            
+            bg_img = np.random.choice(bg_imgs)
+            d = compose_image(d,bg_img,blend=blend)
+            
+            X_[i] = d
+            
+        return X_
         
-        return new_bg
+    def gen_backgrounds(self,X,bg_imgs,rand=None,out=None):
+        if rand is None:
+            rand = np.random.RandomState(7)
+
+        if len(X.shape) == 3:
+            n,w,h = X.shape
+        elif len(X.shape) == 4:
+            n,w,h,_ = X.shape
+
+        dtype = bg_imgs[0].dtype
+        if out is None:
+            out = np.zeros([n,w,h,3], dtype)
+
+        for i in range(n):
+            bg = get_patch(image=rand.choice(bg_imgs),shape=(w,h))
+            if len(bg.shape)==2:
+                bg = np.concatenate([bg.reshape(w,h,1)]*3)
+            out[i] = bg
+    
+        return out
+
+    def add_noise(self,im_stack,noise_bg,fg_mask=None):
+        # Add background noise to whole image
+        im_stack += noise_bg
+        if fg_mask is not None:
+            # Subtract noise that occurs on the fg
+            im_stack -= noise_bg*fg_mask
+            
+    def rasterize(self,image_volumes,blend=None):
+        bg = image_volumes[0]
+        for v in image_volumes[1:]:
+            if blend == 'difference':
+                bg = np.abs(bg - v)
+            else:
+                mask = v>0.05
+                v[mask] = v[mask]*0.80
+                bg[mask] = bg[mask]*0.20
+                bg += v
+            
+        return bg.clip(0.0,1.0)
+    
+    def regen_bg_noise(self,mode=None,**noise_kws):
+        if mode is None:
+            mode = self.noise_mode
+        
+        bg_combined_blank = np.zeros_like(self.bg_combined)
+        self.bg_combined = self.gen_bg_noise(bg_combined_blank,mode=mode,**noise_kws)
+        self.bg_train = self.bg_combined[:len(self.sx_train)]
+        self.bg_test = self.bg_combined[len(self.sx_train):]
+        if self.flatten:
+            self.bg_train = self.flatten_arr(self.bg_train)
+            self.bg_test = self.flatten_arr(self.bg_test)   
         
     def gen_new_shifted(self,x_train,x_test,flatten=True):
         
-        print('making training data...')
-        self.transform_im(x_train,self.sx_train,self.delta_train)
+        print('transforming: ')
+        self.transform_im(x_train,self.sx_train,self.delta_train,msg='train images')
 
         print('making testing data...')
-        self.transform_im(x_test,self.sx_test,self.delta_test)
+        self.transform_im(x_test,self.sx_test,self.delta_test,msg='test_images')
         
 #         (self.sx_train,_),(self.sx_test,_) = prepare_keras_dataset(self.sx_train,y_train,self.sx_test,y_test)
         self.dx = (self.delta_train[:,0],self.delta_test[:,0])
         self.dy = (self.delta_train[:,1],self.delta_test[:,1])
         self.dtheta = (self.delta_train[:,2],self.delta_test[:,2])
         
-        # (x_train_pp,y_train_pp),(x_test_pp,y_test_pp) = prepare_keras_dataset(x_train,y_train,x_test,y_test)
-#         self.input_shape = self.input_shape+(1,)
+        self.meta_train = pd.DataFrame.from_records(
+            {
+                'dx':self.dx[0],
+                'dy':self.dy[0],
+                'rotation':self.dtheta[0]
+            })
         
-    
-        # Check if background should have added uniform noise
-        if self.bg_noise is not None: 
-            self.fg_train = self.sx_train.copy()
-            self.bg_train = self.add_bg_noise(self.sx_train)
-            self.bg_train = norm_im(self.bg_train,flatten,)
-            self.fg_train = norm_im(self.fg_train,flatten,)
-            
-            self.fg_test = self.sx_test.copy()
-            self.bg_test = self.add_bg_noise(self.sx_test)
-            self.bg_test = norm_im(self.bg_test,flatten,)
-            self.fg_test = norm_im(self.fg_test,flatten,)
-            
+        self.fg_mask_train = self.sx_train>0
+        self.fg_mask_test = self.sx_test>0
+        
+        # Normalize and flatten data
         self.sx_train = norm_im(self.sx_train,flatten,)
         self.sx_test = norm_im(self.sx_test,flatten,)
+        
+        # Rescale Contrast
+        if self.contrast_level < 1.0:
+            print('Rescaling contrast to {}'.format(self.contrast_level))
+            self.sx_train = rescale_contrast(self.sx_train,c_level=self.contrast_level)
+            self.sx_test = rescale_contrast(self.sx_test,c_level=self.contrast_level)
+        
+        # Save foreground copies
+        self.fg_train = self.sx_train.copy()
+        self.fg_test = self.sx_test.copy()
+        
+        # 
+        if self.bg is not None:
+            self.sx_train = self.rasterize([self.bg_train.copy(), self.sx_train],blend=self.blend)
+            self.sx_test = self.rasterize([self.bg_test.copy(), self.sx_test],blend=self.blend)
+        
+        # Check if background should have added noise
+        if self.noise_mode is not None:
+            # Update bg_tr/te by creating noise and adding it to the images
+            print('adding noise to training set')
+            self.add_noise(self.sx_train, self.bg_train, fg_mask=self.fg_mask_train, bg_only=self.bg_only)
+            self.sx_train = np.clip(self.sx_train,0,1)
+            
+            print('adding noise to test set')
+            self.add_noise(self.sx_test, self.bg_test, fg_mask=self.fg_mask_test, bg_only=self.bg_only)
+            self.sx_test = np.clip(self.sx_test,0,1)
+    
 #         self.sx_test = norm_im(self.sx_test,flatten)
         
-    def transform_im(self,im_stack,output,delta):
+    def transform_im(self,im_stack,output,delta,msg='transforming'):
         num_im = len(im_stack)
-        for i in range(num_im):
+        for i in trange(num_im,desc=msg):
             letter = im_stack[i]
             if self.rotation is not None:
                 letter,rot = self.rotate_image(letter,rot_max=self.rotation)
