@@ -6,6 +6,15 @@ from keras.layers import Concatenate,Dense,Input
 import keras.backend as K
 import tensorflow as tf
 
+class SaveRecon(Callback):
+    def __init__(self,save_dir,test_images):
+        self.save_dir = save_dir
+        self.test_images = test_images
+        
+    def on_epoch_end(self,epoch,logs={}):
+        pass
+        
+
 class PrintHistory(Callback):
     def __init__(self,print_keys=None,labels=None):
         if print_keys is None:
@@ -19,7 +28,7 @@ class PrintHistory(Callback):
 
     def on_train_begin(self,logs={}):
         self.col_width = 5+7
-        print('Epoch'.ljust(self.col_width),"".join(self.labels[w].ljust(self.col_width) for w in self.print_keys))
+        print('Epoch'.ljust(int(self.col_width/2)),"".join(self.labels[w].ljust(self.col_width) for w in self.print_keys))
         pass
 
     def on_epoch_end(self,epoch,logs={}):
@@ -27,7 +36,7 @@ class PrintHistory(Callback):
 #         print(logs.keys())
 
         out = "".join(str(round(logs[k],4)).ljust(self.col_width) for k in self.print_keys)
-        print((str(epoch)+':').ljust(self.col_width),out)
+        print((str(epoch)+':').ljust(int(self.col_width/2)),out)
         
 
 class Update_k(Callback):

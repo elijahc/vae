@@ -42,21 +42,6 @@ def rescale_contrast(im_stack,c_level):
     
     return out_im
 
-def compose_image(digit, background,blend='difference'):
-    """Difference-blend a digit and a random patch from a background image."""
-    w, h, _ = background.shape
-    dw, dh, _ = digit.shape
-    x = np.random.randint(0, w - dw)
-    y = np.random.randint(0, h - dh)
-    
-    bg = background[x:x+dw, y:y+dh]
-    if blend is None or blend == 'none':
-        pass
-    elif blend == 'difference':
-        im = np.abs(bg - digit).astype(np.uint8)
-        
-    return im
-
 def prepare_keras_dataset(x_train,y_train,x_test,y_test):
     # (x_train, y_train), (x_test, y_test) = k_data.load_data()
 
@@ -108,6 +93,24 @@ def _fast_tx(max_translation,size=1,scale=2,seed=7,im_shape=(56,56)):
         tx['dy'].append(dy)
         
     return tx
+
+def _shift_image(X,dx,dy,scale=2):
+    if len(X.shape) == 2:
+        (x_sz,y_sz) = X.shape
+        n=1
+
+    elif len(X.shape) == 3:
+        (n,x_sz,y_sz) = X.shape
+        
+    bg_size = (n,x_sz*scale,y_sz*scale)
+    dx += int(x_sz/2)
+    dy += int(y_sz/2)
+    new_im = np.zeros(bg_size)
+
+    for i in np.arange(n):  
+        new_im[i,dx:dx+x_sz,dy:dy+y_sz] = X[i]
+
+    return new_im
         
 class Shifted_Data_Loader():
     def gen_uniform_noise(self,im_stack,width=1,amount=1):
@@ -247,6 +250,7 @@ class Shifted_Data_Loader():
         self.y_test = y_test
         self.y_train_oh = to_categorical(y_train)
         self.y_test_oh = to_categorical(y_test)
+        self.num_classes = self.y_train_oh.shape[-1]
         
         num_train = len(self.y_train)
         num_test =  len(self.y_test)
@@ -259,12 +263,14 @@ class Shifted_Data_Loader():
         
         
         if self.bg == 'natural':
+            print('building background images...')
             bg_imgs,_ = bsds500.load_data()
+            bg_imgs = [np.expand_dims(skim.color.rgb2gray(im),-1) for im in bg_imgs]
             self.bg_train = self.gen_backgrounds(self.sx_train,bg_imgs)
-            self.bg_train = np.expand_dims(skim.color.rgb2gray(self.bg_train),-1)
+#             self.bg_train = np.expand_dims(skim.color.rgb2gray(self.bg_train),-1)
             
             self.bg_test = self.gen_backgrounds(self.sx_test,bg_imgs)
-            self.bg_test = np.expand_dims(skim.color.rgb2gray(self.bg_test),-1)
+#             self.bg_test = np.expand_dims(skim.color.rgb2gray(self.bg_test),-1)
             
         self.bg_combined = np.concatenate([self.bg_train,self.bg_test],axis=0)
         
@@ -274,13 +280,14 @@ class Shifted_Data_Loader():
             
         self.delta_train = np.empty((num_train,3))
         self.delta_test = np.empty((num_test,3))
-        print('sx_train: ',self.sx_train.shape)
+#         print('sx_train: ',self.sx_train.shape)
         
         self.x_train_orig = x_train.copy()
         self.x_test_orig = x_test.copy()
         self.x_train = norm_im(x_train,flatten)
         self.x_test = norm_im(x_test,flatten)
 
+        self.training_data = lambda :(self.sx_train,self.y_train_oh)
         if autoload:
             self.gen_new_shifted(x_train,x_test,flatten)        
         
@@ -309,18 +316,20 @@ class Shifted_Data_Loader():
         if len(X.shape) == 3:
             n,w,h = X.shape
         elif len(X.shape) == 4:
-            n,w,h,_ = X.shape
+            n,w,h,ch = X.shape
 
         dtype = bg_imgs[0].dtype
         if out is None:
-            out = np.zeros([n,w,h,3], dtype)
+            out = np.zeros([n,w,h,ch], dtype)
 
-        for i in range(n):
+        for i in trange(n,desc='loading background'):
             bg = get_patch(image=rand.choice(bg_imgs),shape=(w,h))
             if len(bg.shape)==2:
-                bg = np.concatenate([bg.reshape(w,h,1)]*3)
+                bg = np.stack([bg.reshape(w,h,1)]*ch,-1)
             out[i] = bg
-    
+        
+        out = rescale_contrast(out,c_level=0.5)
+        
         return out
 
     def add_noise(self,im_stack,noise_bg,fg_mask=None):
@@ -357,10 +366,10 @@ class Shifted_Data_Loader():
         
     def gen_new_shifted(self,x_train,x_test,flatten=True):
         
-        print('transforming: ')
+#         print('transforming: ')
         self.transform_im(x_train,self.sx_train,self.delta_train,msg='train images')
 
-        print('making testing data...')
+#         print('making testing data...')
         self.transform_im(x_test,self.sx_test,self.delta_test,msg='test_images')
         
 #         (self.sx_train,_),(self.sx_test,_) = prepare_keras_dataset(self.sx_train,y_train,self.sx_test,y_test)
@@ -375,12 +384,11 @@ class Shifted_Data_Loader():
                 'rotation':self.dtheta[0]
             })
         
-        self.fg_mask_train = self.sx_train>0
-        self.fg_mask_test = self.sx_test>0
-        
         # Normalize and flatten data
         self.sx_train = norm_im(self.sx_train,flatten,)
         self.sx_test = norm_im(self.sx_test,flatten,)
+        self.fg_mask_train = self.sx_train>0.05
+        self.fg_mask_test = self.sx_test>0.05
         
         # Rescale Contrast
         if self.contrast_level < 1.0:

@@ -33,7 +33,7 @@ class DRDuplex(GResNet):
 
         GResNet.__init__(self,img_shape,y_dim,z_dim)
         
-        optimizer = Adam(0.0002, 0.5)
+        optimizer = Adam(0.00005, 0.5)
         losses = {
             'Generator':sse,
             'Classifier':'categorical_crossentropy'
@@ -104,7 +104,7 @@ class DRDuplex(GResNet):
         X_tr,y_tr = data_loader.training_data()
         X = X_tr
         y = {
-            'Generator':X,
+            'Generator':data_loader.fg_train,
             'Classifier':y_tr,
         }
         
