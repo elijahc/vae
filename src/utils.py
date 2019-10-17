@@ -245,3 +245,15 @@ def scalar_pmf(a):
     pmf = {k:v/float(sum(ct.values())) for k,v in ct.items()}
     
     return pmf
+
+def save_model(mod,mod_dir,spec_fn='model.json'):
+    model_json = mod.to_json()
+    with open(os.path.join(mod_dir,spec_fn), "w") as json_file:
+        json_file.write(model_json)
+        
+def save_weights(mod,mod_dir,weights_fn='weights.h5'):
+        mod.save_weights(os.path.join(mod_dir,weights_fn))
+
+def save_model_and_weights(mod,mod_dir,spec_fn='model.json',weights_fn='weights.h5'):
+    save_model(mod,mod_dir,spec_fn)
+    save_weights(mod,mod_dir,weights_fn)

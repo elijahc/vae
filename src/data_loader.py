@@ -164,6 +164,7 @@ class Shifted_Data_Loader():
                  bg_only=True,
                  noise_kws=None,
                  blend=None,
+#                  scale_mean0 = False,
                 ):
         self.scale=scale
         self.dataset=dataset
@@ -176,6 +177,7 @@ class Shifted_Data_Loader():
         self.scaling_range = scaling_range
         self.flatten = flatten
         self.contrast_level = contrast_level
+#         self.scale_mean0 = scale_mean0
 
         # Background
         self.bg = bg

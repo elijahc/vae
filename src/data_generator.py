@@ -86,6 +86,7 @@ class ShiftedDataBatcher():
         batch_idxs = np.random.choice(np.arange(n_samples),size=batch_size)
         X_ = data[batch_idxs]
         X = np.zeros((batch_size,)+self.input_shape)
+#         X = np.ones((batch_size,)+self.input_shape)
         y = labels[batch_idxs]
             
         for j in np.arange(batch_size):
@@ -100,8 +101,9 @@ class ShiftedDataBatcher():
             X_bg = np.zeros_like(X)
             
         X = self.rasterize([X_bg.copy(),X_fg],blend=self.blend)
-        X = np.clip((X-X.mean())/X.std(),-1,1)
-        X_fg = np.clip((X_fg-X_fg.mean())/X_fg.std(),-1,1)
+        Xm,Xs = (X.mean(),X.std())
+        X = np.clip((X-Xm)/Xs,-1,1)
+        X_fg = np.clip((X_fg-Xm)/Xs,-1,1)
             
         return X,X_fg,y
         
@@ -264,3 +266,5 @@ class ShiftedDataBatcher():
                 bg += v
             
         return bg.clip(0.0,1.0)
+    
+    
