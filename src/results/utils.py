@@ -6,6 +6,7 @@ import hashlib
 import random
 import json
 from collections import OrderedDict
+from keras.models import Model
 
 
 def raw_to_xr(encodings,l_2_depth,stimulus_set):
@@ -194,3 +195,18 @@ def dprime(A, B=None, mode=DEFAULT_DPRIME_MODE,\
     dp = np.clip(dp, min_value, max_value)
 
     return dp
+
+def get_layer_encoders(m,layer_names):
+    for ln in layer_names:
+        yield Model(m.layers[0].input,m.get_layer(name=ln).output)
+        
+def sample_layer(l,test_data,batch_sz,n_sample_units=192,n_replicates=10):
+    n_samples = test_data.shape[0]
+    l_enc = l.predict(test_data,batch_size=batch_sz)
+    n_units = np.prod(l_enc.shape[1:])
+    l_enc = l_enc.reshape(n_samples,n_units)
+#     print(l_enc.shape)
+    
+    idxs = [np.random.choice(np.arange(n_units),size=n_sample_units,replace=False) for _ in range(n_replicates)]
+    
+    return np.stack([l_enc[:,i] for i in idxs],axis=-1)

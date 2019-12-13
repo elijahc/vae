@@ -257,3 +257,16 @@ def save_weights(mod,mod_dir,weights_fn='weights.h5'):
 def save_model_and_weights(mod,mod_dir,spec_fn='model.json',weights_fn='weights.h5'):
     save_model(mod,mod_dir,spec_fn)
     save_weights(mod,mod_dir,weights_fn)
+    
+def prepare_dir(*args):
+    if len(args) == 1:
+        path = args[0]
+    else:
+        path = os.path.join(*args)
+        
+    if not os.path.exists(path):
+        print(path, ' does not exist. Creating...')
+        
+        os.mkdir(path)
+    
+    return path

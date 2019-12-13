@@ -42,6 +42,8 @@ class ShiftedDataBatcher():
         elif dataset=='fashion_mnist':
             from keras.datasets import fashion_mnist
             (self.x_tr, y_train),(self.x_te, y_test) = fashion_mnist.load_data()
+        else:
+            raise 'Unknown Dataset'
             
         self.y_train = y_train
         self.y_test = y_test
