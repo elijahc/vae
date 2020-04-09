@@ -4,3 +4,8 @@ remote_theme: pmarsceill/just-the-docs
 color_scheme: "dark"
 search_enabled: true
 
+aux_links:
+    "Source Code":
+      - "//github.com/elijahc/vae"
+
+heading_anchors: true
