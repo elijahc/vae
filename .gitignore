@@ -114,3 +114,4 @@ logs/
 *.tar.gz
 
 .ruby-version
+.jekyll-cache/

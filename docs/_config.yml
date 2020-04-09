@@ -1,11 +1,13 @@
 remote_theme: pmarsceill/just-the-docs
+theme: "just-the-docs"
 title: "VAE"
-remote_theme: pmarsceill/just-the-docs
 color_scheme: "dark"
 search_enabled: true
 
 aux_links:
-    "Source Code":
+    "Source code on Github":
       - "//github.com/elijahc/vae"
+    "Preprint on BioArXiv":
+      - "https://www.biorxiv.org/content/10.1101/2020.02.21.958488v1.full"
 
 heading_anchors: true
