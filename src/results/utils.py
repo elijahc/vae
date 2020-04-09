@@ -30,17 +30,21 @@ def raw_to_xr(encodings,l_2_depth,stimulus_set):
             pd.Series([l_2_depth[layer]]*neuroid_n,name='layer'),
             pd.Series([layer]*neuroid_n,name='region')
         ])
-        p_idx = pd.MultiIndex.from_arrays([
-            stimulus_set.image_id,
-            stimulus_set.dx,
-            stimulus_set.dy,
-            stimulus_set.rxy,
-            stimulus_set.numeric_label.astype('int8'),
-            pd.Series([obj_names[i] for i in stimulus_set.numeric_label],name='object_name'),
-            pd.Series(stimulus_set.dx.values/28, name='tx'),
-            pd.Series(stimulus_set.dy.values/28, name='ty'),
-            pd.Series([1.0]*len(stimulus_set),name='s'),
-        ])
+        
+        p_vars = [stimulus_set[k] for k in stimulus_set.keys()]
+        
+        if 'tx' not in stimulus_set.keys():
+            tx = pd.Series(stimulus_set.dx.values/28, name='tx')
+            p_vars.append(tx)
+            
+        if 'ty' not in stimulus_set.keys():
+            ty = pd.Series(stimulus_set.dy.values/28, name='ty')
+            p_vars.append(ty)
+        
+        if 's' not in stimulus_set.keys():
+            p_vars.append(pd.Series([1.0]*len(stimulus_set),name='s'))
+            
+        p_idx = pd.MultiIndex.from_arrays(p_vars)
         da = xarray.DataArray(activations.astype('float32'),
                          coords={'presentation':p_idx,'neuroid':n_idx},
                          dims=['presentation','neuroid'])
@@ -196,17 +200,37 @@ def dprime(A, B=None, mode=DEFAULT_DPRIME_MODE,\
 
     return dp
 
-def get_layer_encoders(m,layer_names):
-    for ln in layer_names:
-        yield Model(m.layers[0].input,m.get_layer(name=ln).output)
+def get_layer_encoders(m,layer_names,input=None,new_names=None):
+    if input is None:
+        input = m.layers[0].input
+    layer_outs = [m.get_layer(name=ln).output for ln in layer_names]
+    
+    if new_names is not None and len(new_names)==len(layer_names):
+        layer_names = new_names
         
-def sample_layer(l,test_data,batch_sz,n_sample_units=192,n_replicates=10):
+    for out,name in zip(layer_outs,layer_names):
+        yield Model(input,out,name=name)
+        
+def sample_layer(l,test_data,batch_sz,n_sample_units=None):
     n_samples = test_data.shape[0]
     l_enc = l.predict(test_data,batch_size=batch_sz)
     n_units = np.prod(l_enc.shape[1:])
+    
+    if n_sample_units is None:
+        n_sample_units = n_units
+    
     l_enc = l_enc.reshape(n_samples,n_units)
-#     print(l_enc.shape)
     
-    idxs = [np.random.choice(np.arange(n_units),size=n_sample_units,replace=False) for _ in range(n_replicates)]
+    if n_units < n_sample_units:
+        # Can't sample more than max units
+        idxs = np.arange(n_units)
+    else:
+        idxs = np.random.choice(np.arange(n_units),size=n_sample_units,replace=False)
     
-    return np.stack([l_enc[:,i] for i in idxs],axis=-1)
+    return l_enc[:,idxs]
+
+def pca_layer(l,test_data,batch_sz,n_components=5, n_sample_units=None, **pca_kws):
+    
+    
+    return l_pca
+    

@@ -1,0 +1,6 @@
+seaborn
+xarray
+numpy
+pandas
+tqdm
+skimage

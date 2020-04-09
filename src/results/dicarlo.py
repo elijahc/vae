@@ -12,3 +12,31 @@ err_neuroids = ['Tito_L_P_8_5', 'Tito_L_P_7_3', 'Tito_L_P_7_5', 'Tito_L_P_5_1', 
                         'Tito_L_P_3_5', 'Tito_L_P_6_8', 'Tito_L_P_2_8', 'Tito_L_P_9_7', 'Tito_L_P_6_7',
                         'Tito_L_P_1_0', 'Tito_L_P_4_5', 'Tito_L_P_4_9', 'Tito_L_P_7_8', 'Tito_L_P_4_7',
                         'Tito_L_P_4_0', 'Tito_L_P_3_9', 'Tito_L_P_7_7', 'Tito_L_P_4_3', 'Tito_L_P_9_5']
+
+def process_dicarlo(assembly,avg_repetition=True, variation=[0, 3, 6], tasks=['ty','tz','rxy']):
+    stimulus_set = assembly.attrs['stimulus_set']
+    stimulus_set['dy_deg'] = stimulus_set.tz*stimulus_set.degrees
+    stimulus_set['dx_deg'] = stimulus_set.ty*stimulus_set.degrees
+    stimulus_set['dy_px'] = stimulus_set.dy_deg*32
+    stimulus_set['dx_px'] = stimulus_set.dx_deg*32
+    
+    assembly.attrs['stimulus_set'] = stimulus_set
+    
+    groups = ['category_name', 'object_name', 'image_id']+tasks
+    if not avg_repetition:
+        groups.append('repetition')
+        
+    data = assembly.multi_groupby(groups)     # (2)
+    data = data.mean(dim='presentation')
+    data = data.squeeze('time_bin')    #   (3)
+#     data.attrs['stimulus_set'] = stimulus_set.query('variation == {}'.format(variation))
+    data = data.T
+    data = data[stimulus_set.variation.isin(variation),:]
+    
+    return data
+
+def dicarlo_slug(stimulus_set):
+    stim = stimulus_set
+    slug = [(dx,dy,lab,float(rxy)) for dx,dy,rxy,lab in zip(stim.dx_px.values,stim.dy_px.values,stim.rxy.values,stim.category_name.values)]
+    
+    return slug
