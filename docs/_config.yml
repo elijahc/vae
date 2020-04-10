@@ -10,4 +10,7 @@ aux_links:
     "Preprint on BioArXiv":
       - "https://www.biorxiv.org/content/10.1101/2020.02.21.958488v1.full"
 
+exclude: ["node_modules/", "*.gemspec", "*.gem", "Gemfile", "Gemfile.lock", "package.json", "package-lock.json",  "script/", "LICENSE.txt", "lib/", "bin/", "README.md", "Rakefile"]
+
+
 heading_anchors: true
