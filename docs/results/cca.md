@@ -136,8 +136,7 @@ g.map(sns.lineplot,'component','cum_fve').add_legend()
 
 
 
-
-![png](CCA-figures_files/CCA-figures_3_1.png)
+![png](https://raw.githubusercontent.com/elijahc/vae/master/docs/assets/images/CCA-figures_3_1.png)
 
 
 
