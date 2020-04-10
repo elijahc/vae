@@ -4,6 +4,9 @@ title: "VAE"
 color_scheme: "dark"
 search_enabled: true
 
+# Set the search token separator
+search_tokenizer_separator: /[\s/]+/
+
 aux_links:
     "Source code on Github":
       - "//github.com/elijahc/vae"
