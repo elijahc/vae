@@ -2,6 +2,7 @@
 # remote_theme: pmarsceill/just-the-docs
 title: Canonical Correlation Analysis
 parent: Results
+nav_order: 2
 
 ---
 
