@@ -156,5 +156,5 @@ g.fig.autofmt_xdate(rotation=45)
 ```
 
 
-![png](CCA-figures_files/CCA-figures_5_0.png)
+![png]({{"/assets/images/CCA-figures_5_0.png"}})
 
