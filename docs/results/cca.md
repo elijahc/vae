@@ -158,3 +158,5 @@ g.fig.autofmt_xdate(rotation=45)
 
 ![png]({{"/assets/images/CCA-figures_5_0.png"}})
 
+![png](https://raw.githubusercontent.com/elijahc/vae/master/figures/cca/pca_cca5_fve.png)
+
