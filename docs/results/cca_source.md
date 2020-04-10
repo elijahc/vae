@@ -1,7 +1,8 @@
 ---
 
 title: CCA Source
-parent: Results
+parent: Canonical Correlation Analysis
+grandparent: results
 nav_exclude: true
 
 ---
