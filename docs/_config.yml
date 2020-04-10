@@ -1,7 +1,7 @@
 remote_theme: pmarsceill/just-the-docs
 theme: "just-the-docs"
 title: "VAE"
-color_scheme: "dark"
+
 search_enabled: true
 
 # Set the search token separator

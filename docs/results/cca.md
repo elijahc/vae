@@ -1,9 +1,11 @@
 ---
 # remote_theme: pmarsceill/just-the-docs
 title: Canonical Correlation Analysis
+parent: Results
 
 ---
 
+# Canonical Correlation Analysis
 
 ```python
 import pandas as pd
