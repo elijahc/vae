@@ -13,7 +13,7 @@ What advantages might be conveyed by a representation that can reconstruct as we
 One possibility is improved noise tolerance.
 We took each of our previously trained models, and measured their accuracy at categorizing the clothing objects in test images corrupted by increasing levels of additive pixel noise.
 
-![Figure 2](https://raw.githubusercontent.com/elijahc/vae/master/figures/pub/figure_2_2x.png)
+![Figure 2](https://raw.githubusercontent.com/elijahc/vae/master/figures/pub/figure_3_2x.png)
 
 Our findings suggest noise tolerance as another independent explanation for why the VS might use a composite computational objective.
 VS classification accuracy measured in humans tolerates noise corrupted images much better than DCNNs optimized for image classification alone.
