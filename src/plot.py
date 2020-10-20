@@ -38,6 +38,17 @@ def example_results(test_set,encoder,decoder,n=10,shuffle=False):
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
     plt.show()
+
+def plot_img_row(imgs,cmap='gray'):
+    if isinstance(imgs,np.ndarray):
+        imgs = np.split(imgs,imgs.shape[0])
+        
+    fig,axs = plt.subplots(1,len(imgs))
+
+    for im, ax in zip(imgs,axs):
+        ax.imshow(np.squeeze(im),cmap=cmap)
+#         remove_axes(ax)
+#         remove_labels(ax)
     
 def orig_vs_transformed(DL,index=None,part='test',cmap='gray',clean=True):
     if part == 'test':

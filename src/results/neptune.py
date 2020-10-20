@@ -17,21 +17,22 @@ from .dicarlo import dicarlo_slug
 
 from keras.models import model_from_json
 from ..data_loader import Shifted_Data_Loader
-from ..test_models.drduplex import sse
+from ..stimuli import FashionMNIST
+from ..test_models.crduplex import sse
 
 class NeptuneExperimentRun(object):
     def __init__(self, proj_root,neptune_exp,name=None):
         self.proj_root = proj_root
         self.experiment = neptune_exp
 
-        self.model = None
         self._compiled = False
         
-        self.properties = None
+        self.properties = self.get_properties()
         self.parameters = None
         if name is None:
             name = self.experiment.id
         self.name = name
+        self.experiment_dir = os.path.join(self.proj_root,self.properties['dir'])
     
     def get_properties(self):
         return self.experiment.get_properties()
@@ -54,7 +55,8 @@ class NeptuneExperimentRun(object):
         print('building model {}(arch={}, recon={})...'.format(self.name,conf['encoder_arch'],conf['recon_weight']))
         m = next(load_models(self.proj_root, [self.experiment], load_weights = True, compile_model = True))
         m.name = self.name
-        return m
+        self.model = m
+        return self.model
     
     def pca_assembly(self, test_data, n_units=None, n_components=5, metadata=None, pca_kws={}):
         if metadata is None or not isinstance(metadata,dict):
@@ -74,7 +76,7 @@ class NeptuneExperimentRun(object):
             for k,v in l_iter:
                 l_iter.set_description('PCA: {}({}, {})'.format(k, *v.shape))
                 
-                if k in ['pixel','y_enc','z_enc']:
+                if k in ['pixel','z_enc']:
                     enc_pca[k] = v
                 elif isinstance(n_components, int) and n_components>np.max(v.shape):
                     enc_pca[k] = v
@@ -84,15 +86,17 @@ class NeptuneExperimentRun(object):
 
                     enc_pca[k] = pca.fit_transform(v)
                     pca_objs[k] = pca
-        
-        print(pca_objs)
-        
+                
         xr = raw_to_xr(enc_pca,depths,stim_set)
         
         return xr,pca_objs
 
     def _gen_layers(self):
-        mod = self._build_model()
+        if not hasattr(self,'model') or self.model is None:
+            mod = self._build_model()
+        else:
+            mod = self.model
+            
         pr = self.get_properties()
 
         if pr['encoder_arch'] == 'dense':
@@ -121,15 +125,15 @@ class NeptuneExperimentRun(object):
         for l,name,depth in zip(layers,n,d):
             yield l,name,depth
     
-    def activations(self, test_data, n_units=192):
+    def activations(self, test_data, n_units=192, n_replicates=100,seed=None):
         if len(test_data.shape) == 3:
-                test_data = np.expand_dims(test_data,-1)
+            test_data = np.expand_dims(test_data,-1)
         
         pa = self.get_parameters()
         batch_sz = int(pa['batch_sz'])
         
         if len(test_data.shape) == 3:
-                test_data = np.expand_dims(test_data,-1)
+            test_data = np.expand_dims(test_data,-1)
         
         pix_data = test_data.reshape(test_data.shape[0],np.prod(test_data.shape[1:]))
         
@@ -137,7 +141,7 @@ class NeptuneExperimentRun(object):
         
         layer_generator = self._gen_layers()
         for l,n,d in self._gen_layers():
-            yield n,sample_layer(l, test_data, batch_sz, n_units)
+            yield n,sample_layer(l, test_data, batch_sz, n_units,seed)
         
     def _layer_depths(self):
         pr = self.get_properties()
@@ -163,14 +167,34 @@ class NeptuneExperimentRun(object):
             
         return l_depths
     
-    def gen_assembly(self, test_data, n_units=192,**metadata):
+    def gen_assembly(self, test_data, n_units=192, n_replicates=100, metadata=None,seed=None):
         l_depths = self._layer_depths()
-        act_iter = self.activations(test_data,n_units)
+        act_iter = self.activations(test_data,n_units,n_replicates,seed)
         enc = {k:v for k,v in act_iter}
         
         stim_set = pd.DataFrame.from_records(metadata)
         
         return raw_to_xr(enc, l_depths, stim_set)
+    
+    def list_assemblies(self):
+        exp_dir = os.path.join(self.proj_root,self.experiment_dir)
+        assembly_fps = [fp for fp in os.listdir(exp_dir) if fp.endswith('.nc')]
+        return assembly_fps
+    
+    def load_assemblies(self,filenames=None):
+        
+        filenames = filenames or self.list_assemblies()
+        paths = [os.path.join(self.proj_root,self.experiment_dir,f) for f in filenames]
+
+        for assembly_fp in paths:
+            if os.path.exists(assembly_fp):
+                da = xarray.open_dataarray(assembly_fp)
+                presentation_idxs = ['image_id','dx','dy','rxy','category_name','object_name','tx','ty','s']
+                n_idxs = ['neuroid_id','layer','region']
+                da = da.set_index(presentation=presentation_idxs,neuroid=n_idxs)
+                da.values
+
+                yield da
             
 def get_exp_dir(proj_root,experiments):
     for e in exps:
@@ -301,7 +325,7 @@ def build_stim_set(test_data=None, slug=None, image_id=None, object_name=None):
     if test_data is None:
         print('no images provided in test_data, generating images using exp params:')
         print("Shifted_Data_Loader('fashion_mnist',rotation=None,translation=0.75,bg='natural',flatten=False)")
-        DL = Shifted_Data_Loader('fashion_mnist',rotation=None,translation=0.75,bg='natural',flatten=False)
+        DL = FashionMNIST(rotation=None,translation=0.75)
         slug = [(dx,dy,float(lab),float(rxy)) for dx,dy,rxy,lab in zip(DL.dx[1],DL.dy[1],DL.dtheta[1],DL.y_test)]
         stim_set = pd.DataFrame({'dx':DL.dx[1]-14,'dy':DL.dy[1]-14,'numeric_label':DL.y_test,'rxy':DL.dtheta[1],'image_id':image_id})
         test_data = DL.sx_test

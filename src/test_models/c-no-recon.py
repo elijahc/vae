@@ -22,84 +22,8 @@ def sse(y_true,y_pred):
     y_true = K.reshape(y_true,(y_shape[0],K.prod(y_shape[1:])))
         
     return K.sum(K.square(y_pred-y_true),axis=-1)
-    
 
-class CRDuplex(GResNet):
-    def __init__(self,
-                 img_shape=(28,28,1),
-                 y_dim=35,z_dim=35,num_classes=10,
-                 recon=1,xent=1,kernel_regularization=None,n_residual_blocks=3):
-        
-        self.num_classes = num_classes
-        self.kernel_regularization = kernel_regularization
-        self.n_residual_blocks = n_residual_blocks
-        self.recon = recon
-        self.xent = xent
-
-        GResNet.__init__(self,img_shape,y_dim,z_dim)
-        
-        optimizer = Adam(0.00005, 0.5)
-        losses = {
-            'Generator':windowed_sse,
-            'Classifier':'categorical_crossentropy'
-        }
-        loss_weights = {
-            'Generator':self.recon,
-            'Classifier':self.xent,
-        }
-        
-        # Build and the discriminator and recognition network
-        self.E, self.Q = self.build_enc_w_qnet()
-        
-        # Build and compile the recognition network Q
-        self.Q.compile(loss=['categorical_crossentropy'],
-            optimizer=optimizer,
-            metrics=['accuracy'])
-
-        # Build the generator
-        self.G = self.build_generator()
-        
-        enc_input = Input(shape=self.img_shape,name='model_input')
-        latent = self.E(enc_input)
-        recon = self.G(latent)
-        
-        # The recognition network produces the predicted label
-        pred_label = self.Q(enc_input)
-        
-        self.combined = Model(enc_input, [recon, pred_label])
-        self.combined.compile(
-            loss=losses,
-            loss_weights=loss_weights,
-            optimizer=optimizer,
-            metrics={'Generator':'mse','Classifier':'accuracy'}
-        )
-        
-    def build_enc_w_qnet(self):
-        img = Input(shape=self.img_shape)
-        embed_mod = build_conv_encoder(input_shape=self.img_shape,layers=[16,32,64,128],drop_rate=0.25)
-        
-        # z_lat_encoding
-        x = embed_mod.layers[0](img)
-        for l in embed_mod.layers[1:]:
-            x = l(x)
-        
-        # z_lat_encoding
-        z_lat = Dense(self.z_dim, activation='linear',name='z_dim')(x)
-
-        # y_lat_encoding
-        y_lat = Dense(self.y_dim, activation='linear',name='y_dim')(x)
-
-        # Q net classifier
-        q_net = Dense(128, activation='linear')(y_lat)
-        label = Dense(self.num_classes, activation='softmax',name='label')(q_net)
-
-        # Combined Latent Representation
-        latent = Concatenate(name='latent')([y_lat,z_lat])
-
-        # Return encoder (Encoder) and recognition network (Q)
-        return Model(img, latent,name='Encoder'), Model(img, label,name='Classifier')
-    
-class CR_DAE(GResNet):
+class Conv_no_recon(GResNet):
     def __init__(self,
         input_shape=(28,28,1),output_shape=(56,56,1),
         y_dim=500,z_dim=0,num_classes=10,
@@ -126,22 +50,22 @@ class CR_DAE(GResNet):
                 metrics=['accuracy'])
 
         # Build the generator
-        self.G = self.build_generator()
+#         self.G = self.build_generator()
                         
         enc_input = Input(shape=self.input_shape,name='model_input')
 
         latent = self.E(enc_input)
-        recon = self.G(latent)
+#         recon = self.G(latent)
 
         # The recognition network produces the predicted label
         pred_label = self.Q(enc_input)
         
         losses = {
-                'Generator':sse,
+#                 'Generator':sse,
                 'Classifier':'categorical_crossentropy',
         }
         
-        self.combined = Model(enc_input, [recon, pred_label])
+        self.combined = Model(enc_input, pred_label)
         self.combined.compile(
                 loss=losses,
                 loss_weights=loss_weights,

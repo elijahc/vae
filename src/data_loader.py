@@ -155,6 +155,7 @@ class Shifted_Data_Loader():
                  scaling_range=0.4,
                  flatten=True,
                  num_train=60000,
+                 num_test=10000,
                  autoload=True,
                  seed=None,
                  bg_noise=None,

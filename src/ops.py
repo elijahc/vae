@@ -3,29 +3,6 @@ import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.framework import ops
-
-def bn(x, is_training, scope):
-    return tf.contrib.layers.batch_norm(x,
-                                        decay=0.9,
-                                        updates_collections=None,
-                                        epsilon=1e-5,
-                                        scale=True,
-                                        is_training=is_training,
-                                        scope=scope)
-
-
-def linear(input_, output_size, scope=None, stddev=0.02, bias_start=0.0, with_w=False):
-    shape = input_.get_shape().as_list()
-
-    with tf.variable_scope(scope or "Linear"):
-        matrix = tf.get_variable("Matrix", [shape[1], output_size], tf.float32,
-                 tf.random_normal_initializer(stddev=stddev))
-        bias = tf.get_variable("bias", [output_size],
-        initializer=tf.constant_initializer(bias_start))
-        if with_w:
-            return tf.matmul(input_, matrix) + bias, matrix, bias
-        else:
-            return tf.matmul(input_, matrix) + bias
         
 def deconv2d(input_, output_shape, k_h=5, k_w=5, d_h=2, d_w=2, name="deconv2d", stddev=0.02, with_w=False):
     with tf.variable_scope(name):

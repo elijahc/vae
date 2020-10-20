@@ -2,7 +2,7 @@ from __future__ import print_function, division
 
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate, multiply, concatenate,Add
 from keras.layers import BatchNormalization, Activation, Embedding, ZeroPadding2D, Lambda
-from keras.layers.advanced_activations import LeakyReLU,ReLU
+from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D,Conv2DTranspose
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
@@ -98,16 +98,16 @@ class GConvNet():
         return Model(gen_input, img,name='Generator')
     
 class GResNet():
-    def __init__(self,img_shape=(28,28,1),y_dim=35,z_dim=35):
-        self.img_shape = img_shape
-        self.img_rows,self.img_cols,self.channels = img_shape
+    def __init__(self,output_shape=(28,28,1),y_dim=35,z_dim=35,n_residual_blocks=3):
+        self.output_shape = output_shape
+        self.img_rows,self.img_cols,self.channels = output_shape
 
         self.y_dim = y_dim
         self.z_dim = z_dim
         self.latent_dim = y_dim+z_dim
         
-        self.gf = 32
-        self.n_residual_blocks = 3
+        self.gf = 16
+        self.n_residual_blocks = n_residual_blocks
         
     def build_generator(self,):
         def residual_block(layer_input, filters,block_reps=2):

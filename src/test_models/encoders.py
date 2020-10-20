@@ -2,7 +2,7 @@ from __future__ import print_function, division
 
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate, multiply, concatenate
 from keras.layers import BatchNormalization, Activation, Embedding, ZeroPadding2D, Lambda
-from keras.layers.advanced_activations import LeakyReLU,ReLU
+from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
@@ -38,7 +38,7 @@ def build_conv_encoder(input_shape, layers=[16,32,64,128], k_sz=3, strides=2, dr
         
         elif i == len(layers)-1:
             # Only stride 1 on last layer
-            model.add(Conv2D(nk, kernel_size=k_sz, strides=1, padding="same"))
+            model.add(Conv2D(nk, kernel_size=k_sz, strides=2, padding="same"))
             
         else:
             model.add(Conv2D(nk, kernel_size=k_sz, strides=strides, padding="same"))

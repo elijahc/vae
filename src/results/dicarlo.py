@@ -1,5 +1,13 @@
 import os
+import numpy as np
 import pandas as pd
+
+from sklearn.preprocessing import MinMaxScaler
+
+
+MED_IMAGES = 'med_imgs_112x112.npy'
+
+SM_IMAGES = 'sm_imgs_56x56.npy'
 
 def get_dicarlo_su(proj_dir,fn='su_selectivity_dicarlo_hi_var.pqt'):
     return pd.read_parquet(os.path.join(proj_dir,'data',fn))
@@ -40,3 +48,18 @@ def dicarlo_slug(stimulus_set):
     slug = [(dx,dy,lab,float(rxy)) for dx,dy,rxy,lab in zip(stim.dx_px.values,stim.dy_px.values,stim.rxy.values,stim.category_name.values)]
     
     return slug
+
+
+def load_dicarlo_images(proj_root,filename,normalize=True):
+    fp = os.path.join(proj_root,'data','dicarlo_images',filename)
+    
+    images = np.load(fp)
+    
+    if normalize:
+        scaler = MinMaxScaler(feature_range=(-1,1))
+#         Xm,Xs = (images.mean(),images.std())
+        images = np.clip(scaler.fit_transform(images.reshape(images.shape[0],-1)), -1,1).reshape(*images.shape)
+    return images
+
+load_md_images = lambda proj_root, normalize=True:load_dicarlo_images(proj_root,MED_IMAGES,normalize)
+load_sm_images = lambda proj_root, normalize=True:load_dicarlo_images(proj_root,SM_IMAGES,normalize)

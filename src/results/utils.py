@@ -8,8 +8,20 @@ import json
 from collections import OrderedDict
 from keras.models import Model
 
+FMNIST_CATEGORIES = [
+        "T-shirt",
+        "Trouser",
+        "Pullover",
+        "Dress",
+        "Coat",
+        "Sandal",
+        "Dress Shirt",
+        "Sneaker",
+        "Bag",
+        "Ankle boot",
+    ]
 
-def raw_to_xr(encodings,l_2_depth,stimulus_set):
+def raw_to_xr(encodings,l_2_depth,stimulus_set,name=None):
     obj_names = [
         "T-shirt",
         "Trouser",
@@ -50,7 +62,12 @@ def raw_to_xr(encodings,l_2_depth,stimulus_set):
                          dims=['presentation','neuroid'])
         all_das.append(da)
         
-    return xarray.concat(all_das,dim='neuroid')
+    xr = xarray.concat(all_das,dim='neuroid')
+    if name is None:
+        name = 'assembly'
+    xr.name = name
+    
+    return xr
 
 def save_assembly(da,run_dir,fname,**kwargs):
     da = da.reset_index(da.coords.dims)
@@ -211,7 +228,9 @@ def get_layer_encoders(m,layer_names,input=None,new_names=None):
     for out,name in zip(layer_outs,layer_names):
         yield Model(input,out,name=name)
         
-def sample_layer(l,test_data,batch_sz,n_sample_units=None):
+def sample_layer(l,test_data,batch_sz,n_sample_units=None,seed=None):
+    if seed is not None:
+        np.random.seed(seed)
     n_samples = test_data.shape[0]
     l_enc = l.predict(test_data,batch_size=batch_sz)
     n_units = np.prod(l_enc.shape[1:])
